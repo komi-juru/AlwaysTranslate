@@ -127,21 +127,18 @@ export function getGeminiBatchState(channelId: string, messageId: string) {
             leaderIds: worker.leaderIds,
             isProcessing: false,
             isFired: false,
-            isEcoWait: false,
             isPaused: true
         };
     }
 
     const ecoThreshold = settings.store.APIEcoModeThreshold || 1;
     const maxWaitMs = (settings.store.APIMaxBatchWait ?? 0) * 1000;
-    const isEcoWait = ecoThreshold > 1 && worker.getQueuedCount() < ecoThreshold;
     return {
         deadline: worker.deadline,
         leaderIds: worker.leaderIds,
         isProcessing: false,
         isFired: false,
-        isEcoWait: isEcoWait,
-        ecoProgress: ecoThreshold > 1 ? worker.getQueuedCount() / ecoThreshold : undefined,
+        ecoProgress: (worker.thresholdMetTime || worker.getQueuedCount() >= ecoThreshold) ? 1 : worker.getQueuedCount() / ecoThreshold,
         startTime: worker.firstMessageTime,
         maxWaitMs
     };

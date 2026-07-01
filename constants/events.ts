@@ -11,7 +11,6 @@ export const getPausedEventName = (channelId: string) => `bat-gemini-paused-${ch
 export interface BatGeminiEventDetail {
     deadline?: number;
     leaderIds?: string[];
-    isEcoWait?: boolean;
     ecoProgress?: number;
     startTime?: number;
     maxWaitMs?: number;

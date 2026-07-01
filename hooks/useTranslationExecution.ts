@@ -66,11 +66,11 @@ export function useTranslationExecution({
             return;
         }
 
-        if (!content) return;
-        if (!allowed && !isManual) return;
-
-        if (skipMessage) return;
-        if (!shouldTranslateContent) return;
+        if (!content || (!allowed && !isManual) || skipMessage || !shouldTranslateContent || currentEngine === "disable") {
+            setIsTranslating(false);
+            setTranslatedText(null);
+            return;
+        }
 
         let cancelled = false;
         let timeoutId: NodeJS.Timeout;

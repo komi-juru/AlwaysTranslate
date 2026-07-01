@@ -76,6 +76,7 @@ export class GeminiChannelWorker {
     }
 
     public firstMessageTime: number = 0;
+    public thresholdMetTime: number = 0;
 
     private schedule() {
         if (this.timer) {
@@ -91,8 +92,10 @@ export class GeminiChannelWorker {
         }
 
         const now = Date.now();
-        if (this.registry.size === 1 || !this.firstMessageTime) {
+        const queuedCount = this.getQueuedCount();
+        if (!this.firstMessageTime) {
             this.firstMessageTime = now;
+            this.thresholdMetTime = 0;
         }
 
         const taskIds = Array.from(this.registry.keys());
@@ -125,48 +128,56 @@ export class GeminiChannelWorker {
         const ecoThreshold = settings.store.APIEcoModeThreshold ?? 1;
         const maxWaitMs = (settings.store.APIMaxBatchWait ?? 0) * 1000;
 
+        const isTimeMet = maxWaitMs > 0 && now >= this.firstMessageTime + maxWaitMs;
+        const isCountMet = queuedCount >= ecoThreshold;
+
+        if ((isCountMet || isTimeMet) && !this.thresholdMetTime) {
+            this.thresholdMetTime = now;
+        }
+
         let deadline: number;
-        let isEcoWait = false;
         let ecoProgress: number | undefined;
+        let nextAction: "process" | "schedule" = "process";
 
         if (hasManual) {
             deadline = now + 150; // 150ms debounce for manual requests
-            isEcoWait = false;
             ecoProgress = 1;
-        } else if (this.getQueuedCount() >= GEMINI_BATCH_SIZE) {
+        } else if (queuedCount >= GEMINI_BATCH_SIZE) {
             deadline = now + 150; // 150ms debounce for immediate processing
-            isEcoWait = false;
             ecoProgress = 1;
-        } else if (ecoThreshold > 1 && this.getQueuedCount() < ecoThreshold) {
-            // 임계값 미달 → 대기 중
+        } else if (ecoThreshold > 1 && queuedCount < ecoThreshold && !this.thresholdMetTime) {
+            // 임계값 미달 & 시간 미달 → 대기 중
             if (maxWaitMs > 0) {
                 deadline = this.firstMessageTime + maxWaitMs;
+                nextAction = "schedule"; // 시간 도달 시 다시 schedule을 호출해 1초 카운트다운으로 넘어가게 함
             } else {
                 deadline = Infinity;
             }
-            isEcoWait = true;
-            ecoProgress = this.getQueuedCount() / ecoThreshold;
+            ecoProgress = queuedCount / ecoThreshold;
         } else {
-            // 임계값 달성 후 → 5초 debounce
-            // 단, maxWaitMs가 설정되어 있다면 그 시간을 넘기지 않음
-            const debounceDeadline = now + BATCH_ACCUMULATION_TIME_GEMINI;
-            deadline = maxWaitMs > 0 ? Math.min(debounceDeadline, this.firstMessageTime + maxWaitMs) : debounceDeadline;
-
-            if (ecoThreshold > 1) {
-                isEcoWait = true;
-                ecoProgress = this.getQueuedCount() / ecoThreshold;
-            }
+            // 임계값 달성 후 (개수 또는 시간) 무조건 1초 대기 (카운트다운 애니메이션 트리거)
+            const baseTime = this.thresholdMetTime || now;
+            deadline = baseTime + BATCH_ACCUMULATION_TIME_GEMINI;
+            ecoProgress = 1;
         }
 
         this.deadline = deadline;
 
         window.dispatchEvent(new CustomEvent(`bat-gemini-debounced-${this.channelId}`, {
-            detail: { deadline, leaderIds: this.leaderIds, isEcoWait, ecoProgress, startTime: this.firstMessageTime, maxWaitMs }
+            detail: { deadline, leaderIds: this.leaderIds, ecoProgress, startTime: this.firstMessageTime, maxWaitMs }
         }));
 
         if (deadline !== Infinity) {
             const waitTime = Math.max(0, deadline - now);
-            this.timer = setTimeout(() => this.process(), waitTime);
+            if (waitTime === 0) {
+                if (nextAction === "process") this.process();
+                else this.schedule();
+            } else {
+                this.timer = setTimeout(() => {
+                    if (nextAction === "process") this.process();
+                    else this.schedule();
+                }, waitTime);
+            }
         }
     }
 
@@ -184,10 +195,14 @@ export class GeminiChannelWorker {
         if (currentTasks.length === 0) return;
 
         this.state = "PROCESSING";
+        this.firstMessageTime = 0;
+        this.thresholdMetTime = 0;
 
         globalProgressStore.reset();
 
-        window.dispatchEvent(new CustomEvent(`bat-gemini-fired-${this.channelId}`));
+        window.dispatchEvent(new CustomEvent(`bat-gemini-fired-${this.channelId}`, {
+            detail: { taskIds: currentTasks.map(t => t.id) }
+        }));
 
         const grouped = new Map<string, TranslationTask[]>();
         for (const t of currentTasks) {
@@ -308,9 +323,12 @@ export class GeminiChannelWorker {
         if (remainingQueued > 0) {
             this.state = "ACCUMULATING";
             this.firstMessageTime = Date.now();
+            this.thresholdMetTime = 0;
             this.schedule();
         } else {
             this.state = "IDLE";
+            this.firstMessageTime = 0;
+            this.thresholdMetTime = 0;
             if (this.registry.size === 0) {
                 geminiWorkers.delete(this.channelId);
             }

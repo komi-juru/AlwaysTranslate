@@ -18,6 +18,7 @@ import { ColorPickerInput } from "./components/ColorPickerInput";
 import { DictionaryManager } from "./components/DictionaryManager";
 import { GithubLinkInjector } from "./components/GithubLinkInjector";
 import { ManualBatchChatBarIcon, TranslateHeaderButton } from "./components/HeaderBarIcon";
+import { SettingsPresets } from "./components/SettingsPresets";
 import { TranslationAccessory } from "./components/TranslationAccessory";
 import { CustomDictionaryStore } from "./dict";
 import { getChannelConfig, settings } from "./settings";
@@ -43,6 +44,7 @@ settings.def.ui_apiKeys.component = ApiKeysManager;
 
 settings.def.ui_translationColor.component = ColorPickerInput;
 settings.def.ui_clearCache.component = ClearCacheButton;
+settings.def.ui_presets.component = SettingsPresets;
 
 export let pluginStarted = false;
 

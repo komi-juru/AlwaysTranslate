@@ -70,8 +70,9 @@ export function useEcoModeEvents({ isGemini, channelId, messageId }: UseEcoModeE
         const debouncedName = getDebouncedEventName(channelId);
         const pausedName = getPausedEventName(channelId);
 
-        const firedHandler = () => {
+        const firedHandler = (e: CustomEvent<{ taskIds?: string[] }>) => {
             if (!hasFired.current) {
+                if (e.detail?.taskIds && !e.detail.taskIds.includes(messageId)) return;
                 hasFired.current = true;
                 globalProgressStore.reset();
                 setStatus("fired");
@@ -110,12 +111,12 @@ export function useEcoModeEvents({ isGemini, channelId, messageId }: UseEcoModeE
             }
         };
 
-        window.addEventListener(firedName, firedHandler);
+        window.addEventListener(firedName, firedHandler as EventListener);
         window.addEventListener(debouncedName, debouncedHandler as EventListener);
         window.addEventListener(pausedName, pausedHandler as EventListener);
 
         return () => {
-            window.removeEventListener(firedName, firedHandler);
+            window.removeEventListener(firedName, firedHandler as EventListener);
             window.removeEventListener(debouncedName, debouncedHandler as EventListener);
             window.removeEventListener(pausedName, pausedHandler as EventListener);
         };

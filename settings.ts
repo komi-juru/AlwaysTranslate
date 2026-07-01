@@ -42,12 +42,7 @@ export const settings = definePluginSettings({
         description: "Translate everything to this language.",
         options: [...LANGUAGES],
     },
-    enableTranslation: {
-        type: OptionType.BOOLEAN,
-        default: true,
-        name: "Enable AlwaysTranslate",
-        description: "Turn translator on/off.",
-    },
+
     translationMode: {
         type: OptionType.SELECT,
         default: "global",
@@ -70,10 +65,7 @@ export const settings = definePluginSettings({
         default: "gemini",
         name: "Manual Translation Engine",
         description: "Engine for the manual translate button.",
-        options: [
-            { label: "Disable", value: "disable" },
-            ...GLOBAL_ENGINE_OPTIONS
-        ],
+        options: [...GLOBAL_ENGINE_OPTIONS],
     },
     deeplApiKey: {
         type: OptionType.CUSTOM,
@@ -109,10 +101,14 @@ export const settings = definePluginSettings({
         type: OptionType.CUSTOM,
         default: {} as Record<string, GeminiQuotaLockState>,
     },
+    ui_presets: {
+        type: OptionType.COMPONENT,
+        component: () => null,
+    },
     APIEcoModeThreshold: {
         type: OptionType.SLIDER,
-        name: "API Eco Mode Threshold",
-        description: "Wait for N messages to batch translate. (Set to 3 for normal use)",
+        name: "API Eco Mode Threshold (Messages)",
+        description: "Wait for N messages to batch translate.",
         markers: [1, 3, 5, 10, 25, 50, 100, 250],
         default: 3,
         componentProps: { equidistant: true },
@@ -120,10 +116,14 @@ export const settings = definePluginSettings({
     APIMaxBatchWait: {
         type: OptionType.SLIDER,
         name: "API Max Batch Wait Time (sec)",
-        description: "Max wait time before forcing translation. (0 = infinite)",
+        description: "Max wait time before forcing translation.",
         markers: [0, 5, 10, 15, 30, 60, 120, 180, 300],
         default: 10,
-        componentProps: { equidistant: true },
+        componentProps: { 
+            equidistant: true,
+            onValueRender: (v: number) => v === 0 ? "∞" : `${v}s`,
+            onMarkerRender: (v: number) => v === 0 ? "∞" : `${v}`
+        },
     },
 
     header_management: {
@@ -225,10 +225,6 @@ export function getChannelConfig(channelId: string): {
     allowed: boolean;
     config: ChannelConfig | null;
 } {
-    if (!settings.store.enableTranslation) {
-        return { allowed: false, config: null };
-    }
-
     const channels = settings.store.channelList;
     const config = channels.find(c => c.id === channelId);
 
@@ -246,9 +242,10 @@ export function updateChannel(
     channelId: string,
     updater: Partial<Omit<ChannelConfig, "id">>
 ) {
-    const channel = settings.store.channelList.find(ch => ch.id === channelId);
-    if (channel) {
-        Object.assign(channel, updater);
+    const channels = settings.store.channelList;
+    const channelIndex = channels.findIndex(ch => ch.id === channelId);
+    if (channelIndex !== -1) {
+        channels[channelIndex] = { ...channels[channelIndex], ...updater };
     }
 }
 

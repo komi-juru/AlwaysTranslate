@@ -161,8 +161,9 @@ async function fetchGeminiAPI(payload: any, engine: string, apiKey: string): Pro
         return text.trim();
     } catch (e: any) {
         if (e.message?.includes("Quota Exceeded")) throw e;
+        if (e.message?.includes("safety filters")) throw e;
         Logger.warn("Gemini", "Failed to parse API response", e);
-        throw new Error("Gemini returned an invalid response.");
+        throw new Error(`Gemini returned an invalid response: ${e.message}`);
     }
 }
 

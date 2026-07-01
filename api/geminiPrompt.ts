@@ -4,9 +4,17 @@
  * SPDX-License-Identifier: GPL-3.0-or-later
  */
 
+import { LANGUAGES } from "../constants";
+
+function getLanguageName(code: string): string {
+    const lang = LANGUAGES.find(l => l.value === code);
+    return lang ? lang.label : code;
+}
+
 export function buildBatchTranslationPrompt(targetLang: string, customPrompt: string): string {
+    const langName = getLanguageName(targetLang);
     return `# Role
-You are an expert multilingual translator for chat applications. Translate all messages into ${targetLang}.
+You are an expert multilingual translator for chat applications. Translate all messages into ${langName}.
 
 # Rules
 1. Preserve the exact meaning, tone, emojis, markdown, URLs, mentions, and formatting.
@@ -125,16 +133,17 @@ Translate them naturally according to context instead of literally.
 - Escape quotes (") and newlines (\\n) correctly.
 - Do not output markdown codeblocks (like \`\`\`json), comments, explanations, or any extra text.
 
-# 8. Few-shot Examples (JSON format)
+# 8. Example Output Structure
 Input:
-{"1":"草", "2":"skill issue lol", "3":"{@0@} gg wp", "4":"wtf is this shit", "5":"ㄹㅇ ㅈㄴ 어렵네"}
+{"1":"Text A", "2":"Text B", "3":"{@0@} Text C"}
 Output:
-{"1":"lmao", "2":"실력 문제네 ㅋㅋ", "3":"{@0@} 수고했어", "4":"이게 씨발 뭐냐", "5":"fr so fucking hard"}`;
+{"1":"[Translated Text A]", "2":"[Translated Text B]", "3":"{@0@} [Translated Text C]"}`;
 }
 
 export function buildDeepSeekUserPrompt(targetLang: string, customPrompt: string, messagesToTranslate: { id: string, text: string }[]): string {
+    const langName = getLanguageName(targetLang);
     const compactInput = Object.fromEntries(messagesToTranslate.map(m => [m.id, m.text]));
-    return `Translate to ${targetLang}.
+    return `Translate to ${langName}.
 ${customPrompt ? `# User Custom Instruction\n${customPrompt}\n` : ""}<target_messages>
 ${JSON.stringify(compactInput)}
 </target_messages>`;

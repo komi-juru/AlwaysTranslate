@@ -102,16 +102,6 @@ export function TranslateHeaderButton() {
         const channels = settings.store.channelList;
         const isChannelListed = channels.some(c => c.id === channelId);
 
-        const togglePlugin = () => {
-            const newState = !settings.store.enableTranslation;
-            settings.store.enableTranslation = newState;
-            Toasts.show({
-                message: newState ? "AlwaysTranslate enabled." : "AlwaysTranslate disabled.",
-                type: newState ? Toasts.Type.SUCCESS : Toasts.Type.FAILURE,
-                id: Toasts.genId()
-            });
-        };
-
         const toggleChannelWhitelist = () => {
             if (isChannelListed) {
                 removeChannel(channelId);
@@ -141,18 +131,6 @@ export function TranslateHeaderButton() {
             : "default";
 
 
-
-        const pluginToggleItem = (
-            <Menu.MenuGroup>
-                <Menu.MenuCheckboxItem
-                    id="plugin-toggle"
-                    label="Enable AlwaysTranslate"
-                    checked={enableTranslation}
-                    dontCloseOnActionIf={() => true}
-                    action={togglePlugin}
-                />
-            </Menu.MenuGroup>
-        );
 
         const autoEngineItems = (
                 <Menu.MenuGroup label="Auto Translation Engine">
@@ -234,7 +212,6 @@ export function TranslateHeaderButton() {
                             key={opt.value}
                             id={`manual-engine-${opt.value}`}
                             label={
-
                                 opt.value.startsWith("deepseek") && dsUsageText ? `${opt.label} ${dsUsageText}` :
                                 opt.label
                             }
@@ -249,16 +226,53 @@ export function TranslateHeaderButton() {
             </Menu.MenuGroup>
         );
 
+        const applyPreset = (name: string, threshold: number, waitMs: number) => {
+            settings.store.APIEcoModeThreshold = threshold;
+            settings.store.APIMaxBatchWait = waitMs;
+            Toasts.show({
+                message: `Applied ${name} Preset!`,
+                type: Toasts.Type.SUCCESS,
+                id: Toasts.genId()
+            });
+        };
+
+        const presetItems = (
+            <Menu.MenuGroup>
+                <Menu.MenuItem id="eco-preset-select" label="Eco Mode Presets">
+                    <Menu.MenuItem
+                        id="preset-realtime"
+                        label="⚡ Real-time"
+                        action={() => applyPreset("Real-time", 1, 0)}
+                    />
+                    <Menu.MenuItem
+                        id="preset-balance"
+                        label="⚖️ Balance"
+                        action={() => applyPreset("Balance", 3, 10)}
+                    />
+                    <Menu.MenuItem
+                        id="preset-economy"
+                        label="💰 Economy"
+                        action={() => applyPreset("Economy", 10, 30)}
+                    />
+                    <Menu.MenuItem
+                        id="preset-sleep"
+                        label="💤 Sleep"
+                        action={() => applyPreset("Sleep", 250, 0)}
+                    />
+                </Menu.MenuItem>
+            </Menu.MenuGroup>
+        );
+
         if (!isChannelListed) {
             return (
                 <Menu.Menu navId="bat-translate-menu" onClose={() => setShow(false)} aria-label="Translate Options">
-                    {pluginToggleItem}
-                    <Menu.MenuSeparator />
                     {whitelistItems}
                     <Menu.MenuSeparator />
                     {autoEngineItems}
                     <Menu.MenuSeparator />
                     {manualEngineItems}
+                    <Menu.MenuSeparator />
+                    {presetItems}
                     <Menu.MenuSeparator />
                     {toggles}
                 </Menu.Menu>
@@ -280,8 +294,6 @@ export function TranslateHeaderButton() {
 
         return (
             <Menu.Menu navId="bat-translate-menu" onClose={() => setShow(false)} aria-label="Translate Options">
-                {pluginToggleItem}
-                <Menu.MenuSeparator />
                 {whitelistItems}
                 <Menu.MenuSeparator />
                 {autoEngineItems}
@@ -293,6 +305,8 @@ export function TranslateHeaderButton() {
                         {languageItems}
                     </Menu.MenuItem>
                 </Menu.MenuGroup>
+                <Menu.MenuSeparator />
+                {presetItems}
                 <Menu.MenuSeparator />
                 {toggles}
             </Menu.Menu>

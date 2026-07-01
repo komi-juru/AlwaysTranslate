@@ -110,7 +110,7 @@ export function TranslationAccessory({ message }: { message: Message }) {
     }
 
     // Prioritize Gemini cache over DeepL if the user previously manually translated it
-    if (!isManual && !(autoEngine.startsWith("gemini") || autoEngine.startsWith("deepseek")) && (activeManualEngine.startsWith("gemini") || activeManualEngine.startsWith("deepseek"))) {
+    if (!isManual && autoEngine !== "disable" && !(autoEngine.startsWith("gemini") || autoEngine.startsWith("deepseek")) && (activeManualEngine.startsWith("gemini") || activeManualEngine.startsWith("deepseek"))) {
         const manualCached = TranslationCache.getInstance().peek(manualCacheKey);
         if (manualCached) {
             activeEngine = activeManualEngine;
@@ -179,6 +179,7 @@ export function TranslationAccessory({ message }: { message: Message }) {
     });
 
     // If channel is disabled or no translation yet, render nothing
+    if (activeEngine === "disable") return null;
     if (!allowed && !isManual) return null;
     if (!translatedText && !isTranslating) return null;
 

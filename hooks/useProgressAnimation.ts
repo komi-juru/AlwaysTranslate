@@ -53,12 +53,17 @@ export function useProgressAnimation({
                 const isCountdown = targetEcoProgress.current >= 1 && targetDeadline.current !== Infinity;
 
                 if (isCountdown) {
+                    const remaining = Math.max(0, targetDeadline.current - now);
+                    const expectedProgress = remaining / BATCH_ACCUMULATION_TIME_GEMINI;
+                    
                     if (!wasCountdown.current) {
                         wasCountdown.current = true;
-                        currentProgressRef.current = 1;
+                        // Only jump to 1 if we are starting fresh (not continuing a previous leader's countdown)
+                        if (currentProgressRef.current < expectedProgress - 0.1) {
+                            currentProgressRef.current = 1;
+                        }
                     }
-                    const remaining = Math.max(0, targetDeadline.current - now);
-                    const targetProgress = remaining / BATCH_ACCUMULATION_TIME_GEMINI;
+                    const targetProgress = expectedProgress;
                     currentProgressRef.current += (targetProgress - currentProgressRef.current) * 0.15;
                 } else if (targetMaxWaitMs.current > 0 && targetEcoProgress.current < 1) {
                     // Max Wait 켜져있는 에코 모드 (시간과 개수 중 더 많이 찬 것을 따라감)

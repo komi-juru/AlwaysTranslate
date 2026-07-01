@@ -102,6 +102,7 @@ export function LoadingIndicator({
                         {(() => {
                             const threshold = APIEcoModeThreshold ?? 1;
                             if (threshold <= 1) return null;
+                            if (targetEcoProgress.current >= 1) return null;
                             const count = Math.round(targetEcoProgress.current * threshold);
                             return (
                                 <span style={{ fontSize: "10px", opacity: 0.6, marginLeft: "4px", fontFamily: "monospace", userSelect: "none" }}>
