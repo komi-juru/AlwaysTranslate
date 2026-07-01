@@ -4,6 +4,7 @@ Real-time AI translation for Vencord.
 
 <img width="709" height="353" alt="image" src="https://github.com/user-attachments/assets/c6b3701c-b390-44e4-9a9e-a3d00d97c968" />
 <img width="682" height="462" alt="Honeycam 2026-07-01 15-46-22" src="https://github.com/user-attachments/assets/3d468a52-e4b9-40a4-b089-181bad716574" />
+<img width="682" height="341" alt="Honeycam 2026-07-01 18-22-25" src="https://github.com/user-attachments/assets/46629439-bfe3-4544-b7d2-cdabbcfa39aa" />
 
 
 ## Features
