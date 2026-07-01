@@ -44,7 +44,7 @@ export async function translateBatchWithDeepSeek(
         messages: chatMessages,
         stream: false,
         temperature: 0.3,
-        max_tokens: 4000
+        max_tokens: 8192
     };
 
     if (!isR1) {
