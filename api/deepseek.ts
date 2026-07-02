@@ -60,7 +60,7 @@ export async function translateBatchWithDeepSeek(
     }
 
     if (!res.ok) {
-        let errStr = String(res.status);
+        let errStr = res.data || String(res.status);
         try {
             const errObj = JSON.parse(res.data);
             errStr = errObj.error?.message || JSON.stringify(errObj);

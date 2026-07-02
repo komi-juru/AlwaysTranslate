@@ -19,6 +19,7 @@ function showEngineToast(engine: string, reason: string) {
 
 export interface TranslationTask {
     id: string;
+    messageId: string;
     channelId: string;
     text: string;
     resolve: (res: string) => void;
@@ -71,7 +72,7 @@ export class GeminiChannelWorker {
 
     public enqueue(task: TranslationTask) {
         task.status = "QUEUED";
-        this.registry.set(task.id, task);
+        this.registry.set(task.messageId, task);
         this.schedule();
     }
 
@@ -98,17 +99,17 @@ export class GeminiChannelWorker {
             this.thresholdMetTime = 0;
         }
 
-        const taskIds = Array.from(this.registry.keys());
-        const currentLeaderId = taskIds[taskIds.length - 1];
+        const tasks = Array.from(this.registry.values());
+        const currentLeaderId = tasks[tasks.length - 1].messageId;
 
         // Find the chronologically newest message (largest Snowflake ID)
-        let newestId = taskIds[0];
+        let newestId = tasks[0].messageId;
         let maxBig = BigInt(newestId);
-        for (let i = 1; i < taskIds.length; i++) {
-            const big = BigInt(taskIds[i]);
+        for (let i = 1; i < tasks.length; i++) {
+            const big = BigInt(tasks[i].messageId);
             if (big > maxBig) {
                 maxBig = big;
-                newestId = taskIds[i];
+                newestId = tasks[i].messageId;
             }
         }
 
@@ -201,7 +202,7 @@ export class GeminiChannelWorker {
         globalProgressStore.reset();
 
         window.dispatchEvent(new CustomEvent(`bat-gemini-fired-${this.channelId}`, {
-            detail: { taskIds: currentTasks.map(t => t.id) }
+            detail: { taskIds: currentTasks.map(t => t.messageId) }
         }));
 
         const grouped = new Map<string, TranslationTask[]>();
@@ -238,7 +239,7 @@ export class GeminiChannelWorker {
                     const timeoutId = setTimeout(() => this.abortController?.abort(), 300000);
 
                     try {
-                        const messagesToTranslate = chunk.map(t => ({ id: t.id, text: t.text }));
+                        const messagesToTranslate = chunk.map(t => ({ id: t.messageId, text: t.text }));
 
                         let fetchPromise;
                         if (engine.startsWith("deepseek")) {
@@ -269,13 +270,18 @@ export class GeminiChannelWorker {
                         clearTimeout(timeoutId);
 
                         const resultMap = new Map(results.map((r: any) => [r.id, r.text]));
-                        chunk.forEach(t => { t.resolve(resultMap.get(t.id) || ""); this.registry.delete(t.id); });
+                        chunk.forEach(t => { 
+                            t.resolve(resultMap.get(t.messageId) || ""); 
+                            if (this.registry.get(t.messageId)?.id === t.id) {
+                                this.registry.delete(t.messageId); 
+                            }
+                        });
                     } catch (e: unknown) {
                         clearTimeout(timeoutId);
 
                         const errorMsg = e instanceof Error ? e.message : String(e);
                         const isTimeout = errorMsg.toLowerCase().includes("timeout");
-                        const isNetwork = errorMsg.toLowerCase().includes("network request failed");
+                        const isNetwork = errorMsg.toLowerCase().includes("network request failed") || errorMsg.toLowerCase().includes("fetch failed");
 
                         Logger.error("Translate", "Gemini Batch translation error", e);
 
@@ -306,10 +312,18 @@ export class GeminiChannelWorker {
                         } else if (isTimeout || isNetwork) {
                             showEngineToast(engineType, isTimeout ? "Timeout" : "Network error");
                         } else {
-                            showEngineToast(engineType, errorMsg.length > 80 ? errorMsg.substring(0, 80) + "..." : errorMsg || "Request failed");
+                            const isJsonTruncated = errorMsg.toLowerCase().includes("unterminated string in json") || errorMsg.toLowerCase().includes("unexpected end of json");
+                            if (!isJsonTruncated) {
+                                showEngineToast(engineType, errorMsg.length > 80 ? errorMsg.substring(0, 80) + "..." : errorMsg || "Request failed");
+                            }
                         }
 
-                        chunk.forEach(t => { t.resolve(""); this.registry.delete(t.id); });
+                        chunk.forEach(t => { 
+                            t.resolve(""); 
+                            if (this.registry.get(t.messageId)?.id === t.id) {
+                                this.registry.delete(t.messageId); 
+                            }
+                        });
                     } finally {
                         this.abortController = null;
                     }
@@ -342,6 +356,12 @@ export class GeminiChannelWorker {
         }
         if (this.getQueuedCount() > 0 && this.state !== "PROCESSING") {
             this.process();
+        }
+    }
+
+    public reSchedule() {
+        if (this.state !== "PROCESSING" && this.getQueuedCount() > 0) {
+            this.schedule();
         }
     }
 
@@ -401,6 +421,12 @@ export class DeeplChannelWorker {
         this.timer = setTimeout(() => this.process(), BATCH_ACCUMULATION_TIME_DEEPL);
     }
 
+    public reSchedule() {
+        if (this.state !== "PROCESSING" && this.getQueuedCount() > 0) {
+            this.schedule();
+        }
+    }
+
     private clearPendingTasks() {
         this.registry.forEach(t => t.resolve(""));
         this.registry.clear();
@@ -441,7 +467,12 @@ export class DeeplChannelWorker {
                 const results = await Promise.race([fetchPromise, timeoutPromise]);
                 clearTimeout(timeoutId);
 
-                chunk.forEach((t, idx) => { t.resolve(results[idx] || ""); this.registry.delete(t.id); });
+                chunk.forEach((t, idx) => { 
+                    t.resolve(results[idx] || ""); 
+                    if (this.registry.get(t.messageId)?.id === t.id) {
+                        this.registry.delete(t.messageId); 
+                    }
+                });
             } catch (e: unknown) {
                 clearTimeout(timeoutId);
                 Logger.error("Translate", "DeepL Batch translation error", e);
@@ -463,7 +494,12 @@ export class DeeplChannelWorker {
                     return;
                 }
 
-                chunk.forEach(t => { t.resolve(""); this.registry.delete(t.id); });
+                chunk.forEach(t => { 
+                    t.resolve(""); 
+                    if (this.registry.get(t.messageId)?.id === t.id) {
+                        this.registry.delete(t.messageId); 
+                    }
+                });
             } finally {
                 this.abortController = null;
             }
@@ -509,4 +545,9 @@ export function resetAllWorkers() {
     geminiWorkers.clear();
     deeplWorkers.forEach(w => w.reset());
     deeplWorkers.clear();
+}
+
+export function reScheduleAllWorkers() {
+    geminiWorkers.forEach(w => w.reSchedule());
+    deeplWorkers.forEach(w => w.reSchedule());
 }

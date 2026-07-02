@@ -11,8 +11,7 @@ import { Menu, Popout, SelectedChannelStore, Toasts,useEffect, useRef, useState,
 
 // Removed getDeepLUsage import
 import { getDeepSeekBalance } from "../api/deepseek";
-import { resetTranslationQueues } from "../api/translate";
-import { deeplWorkers, geminiWorkers } from "../api/worker";
+import { reScheduleAllWorkers, resetTranslationQueues } from "../api/translate";
 import { CHANNEL_ENGINE_OPTIONS, GLOBAL_ENGINE_OPTIONS, LANGUAGES } from "../constants";
 import { addChannel, removeChannel,settings, updateChannel } from "../settings";
 import { TranslationCache } from "../utils/cache";
@@ -229,6 +228,7 @@ export function TranslateHeaderButton() {
         const applyPreset = (name: string, threshold: number, waitMs: number) => {
             settings.store.APIEcoModeThreshold = threshold;
             settings.store.APIMaxBatchWait = waitMs;
+            reScheduleAllWorkers();
             Toasts.show({
                 message: `Applied ${name} Preset!`,
                 type: Toasts.Type.SUCCESS,

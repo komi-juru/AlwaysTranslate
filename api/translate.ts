@@ -11,9 +11,9 @@ import { shouldTranslate } from "../utils/message";
 import { getDictRegex } from "../utils/string";
 import { getGeminiActiveQuotaLock, showGeminiQuotaToast } from "./breaker";
 import { translationQueue } from "./queue";
-import { DeeplChannelWorker, deeplWorkers, GeminiChannelWorker, geminiWorkers, resetAllWorkers } from "./worker";
+import { DeeplChannelWorker, deeplWorkers, GeminiChannelWorker, geminiWorkers, resetAllWorkers, reScheduleAllWorkers } from "./worker";
 
-export { translationQueue };
+export { translationQueue, reScheduleAllWorkers };
 
 export function resetTranslationQueues() {
     translationQueue.reset();
@@ -54,8 +54,9 @@ export async function translate(
             }
 
             const worker = geminiWorkers.get(channelId)!;
+            const taskId = Math.random().toString(36).slice(2);
             worker.enqueue({
-                id: messageId, channelId, text, resolve, targetLang, apiKey: engineKey, engine, dmPrompt, isManual
+                id: taskId, messageId, channelId, text, resolve, targetLang, apiKey: engineKey, engine, dmPrompt, isManual
             });
             if (!messageId) {
                 worker.flushNow();

@@ -205,10 +205,13 @@ export function TranslationAccessory({ message }: { message: Message }) {
 
     let displayText = translatedText;
 
-    if (!hideOriginal && preserveEmojis) {
-        displayText = displayText
-            .replace(/<a?:\w+:\d+>/g, "")
-            .replace(/[\p{Emoji_Presentation}\p{Extended_Pictographic}]/gu, "");
+    if (!hideOriginal) {
+        if (preserveEmojis) {
+            displayText = displayText
+                .replace(/<a?:\w+:\d+>/g, "")
+                .replace(/[\p{Emoji_Presentation}\p{Extended_Pictographic}]/gu, "");
+        }
+        displayText = displayText.replace(/https?:\/\/[^\s>]+/g, "");
     }
 
     return (
