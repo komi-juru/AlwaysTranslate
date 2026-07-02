@@ -63,8 +63,19 @@ export function useProgressAnimation({
                             currentProgressRef.current = 1;
                         }
                     }
+                    
                     const targetProgress = expectedProgress;
-                    currentProgressRef.current += (targetProgress - currentProgressRef.current) * 0.15;
+                    
+                    // Smooth physics trailing (0.15) for normal operation and reset jumps.
+                    // But in the final 200ms, gradually stiffen the easing factor up to 1.0
+                    // to guarantee a mathematically perfect landing at exactly 0.0 when remaining hits 0.
+                    let easeFactor = 0.15;
+                    if (remaining <= 200) {
+                        const ratio = 1 - (remaining / 200);
+                        easeFactor = 0.15 + (0.85 * ratio);
+                    }
+                    
+                    currentProgressRef.current += (targetProgress - currentProgressRef.current) * easeFactor;
                 } else if (targetMaxWaitMs.current > 0 && targetEcoProgress.current < 1) {
                     // Max Wait 켜져있는 에코 모드 (시간과 개수 중 더 많이 찬 것을 따라감)
                     wasCountdown.current = false;

@@ -49,7 +49,7 @@ export function TranslateHeaderButton() {
                 if (settings.store.deepseekApiKey) {
                     getDeepSeekBalance(settings.store.deepseekApiKey).then(res => {
                         if (res) {
-                            setDsUsageText(`(${res})`);
+                            // setDsUsageText(`(${res})`);
                         }
                     });
                 }
