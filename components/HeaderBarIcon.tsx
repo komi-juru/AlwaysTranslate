@@ -12,6 +12,7 @@ import { Menu, Popout, SelectedChannelStore, Toasts,useEffect, useRef, useState,
 // Removed getDeepLUsage import
 import { getDeepSeekBalance } from "../api/deepseek";
 import { reScheduleAllWorkers, resetTranslationQueues } from "../api/translate";
+import { deeplWorkers, geminiWorkers } from "../api/worker";
 import { CHANNEL_ENGINE_OPTIONS, GLOBAL_ENGINE_OPTIONS, LANGUAGES } from "../constants";
 import { addChannel, removeChannel,settings, updateChannel } from "../settings";
 import { TranslationCache } from "../utils/cache";
