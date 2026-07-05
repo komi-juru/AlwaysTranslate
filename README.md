@@ -17,7 +17,7 @@ Real-time AI translation for Vencord.
 
 ---
 
-## Installation
+## Install
 
 Building Vencord from source is required.
 
@@ -36,25 +36,20 @@ git clone https://github.com/Vendicated/Vencord
 ```
 
 ### 3. Install AlwaysTranslate
-
+Create the userplugins folder if it doesn't exist.
 ```bash
 cd Vencord/src/userplugins
 git clone https://github.com/komi-juru/AlwaysTranslate.git alwaysTranslate
-
-cd ../..
-pnpm install
 pnpm build
 ```
 
 ---
 
-## Updating
-
+## Update
+Pull the latest changes and rebuild.
 ```bash
 cd Vencord/src/userplugins/alwaysTranslate
 git pull
-
-cd ../..
 pnpm build
 ```
 
