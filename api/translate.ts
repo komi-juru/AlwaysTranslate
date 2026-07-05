@@ -31,7 +31,8 @@ export async function translate(
     targetLang: string,
     engine: string,
     apiKeys: { deepl: string, gemini: string, deepseek: string },
-    isManual = false
+    isManual = false,
+    dictMatches: Record<string, string> = {}
 ): Promise<string> {
     if (engine?.startsWith("gemini") || engine?.startsWith("deepseek")) {
         const isDeepSeek = engine.startsWith("deepseek");
@@ -56,7 +57,7 @@ export async function translate(
             const worker = geminiWorkers.get(channelId)!;
             const taskId = Math.random().toString(36).slice(2);
             worker.enqueue({
-                id: taskId, messageId, channelId, text, resolve, targetLang, apiKey: engineKey, engine, dmPrompt, isManual
+                id: taskId, messageId, channelId, text, resolve, targetLang, apiKey: engineKey, engine, dmPrompt, isManual, dictMatches
             });
             if (!messageId) {
                 worker.flushNow();
@@ -178,11 +179,12 @@ function restoreTokens(text: string, tokens: string[]): string {
 let cachedDictHash = "";
 let cachedDictRegex: RegExp | null = null;
 
-function applyCustomDictionary(text: string, caseSensitive: boolean): string {
+function applyCustomDictionary(text: string, caseSensitive: boolean): { replacedText: string, matches: Record<string, string> } {
     const dict = CustomDictionaryStore.getInstance().getDict();
     const dictKeys = Object.keys(dict);
+    const matches: Record<string, string> = {};
 
-    if (dictKeys.length === 0) return text;
+    if (dictKeys.length === 0) return { replacedText: text, matches };
 
     // Cache invalidation logic
     const currentHash = dictKeys.join(",") + "_" + caseSensitive;
@@ -193,13 +195,18 @@ function applyCustomDictionary(text: string, caseSensitive: boolean): string {
     }
 
     if (cachedDictRegex) {
-        return text.replace(cachedDictRegex, match => {
+        const replacedText = text.replace(cachedDictRegex, match => {
             const matchedKey = dictKeys.find(k => caseSensitive ? k === match : k.toLowerCase() === match.toLowerCase());
-            return (matchedKey && dict[matchedKey]) ? dict[matchedKey] : match;
+            if (matchedKey && dict[matchedKey]) {
+                matches[matchedKey] = dict[matchedKey];
+                return dict[matchedKey];
+            }
+            return match;
         });
+        return { replacedText, matches };
     }
 
-    return text;
+    return { replacedText: text, matches };
 }
 
 export async function safeTranslate(
@@ -218,7 +225,12 @@ export async function safeTranslate(
     let { textToTranslate, tokens } = tokenizeText(content.trim(), settings.store.preserveEmojis);
 
     // 2. Custom Dictionary Substitution
-    textToTranslate = applyCustomDictionary(textToTranslate, settings.store.dictionaryCaseSensitive);
+    const isAI = engine?.startsWith("gemini") || engine?.startsWith("deepseek");
+    const { replacedText, matches } = applyCustomDictionary(textToTranslate, settings.store.dictionaryCaseSensitive);
+    
+    // For AI, we keep original text and pass dictionary rules to prompt.
+    // For DeepL, we inline replace the text.
+    textToTranslate = isAI ? textToTranslate : replacedText;
 
     // 3. Translate
     const result = await translate(
@@ -229,7 +241,8 @@ export async function safeTranslate(
         targetLang,
         engine,
         apiKeys,
-        isManual
+        isManual,
+        matches
     );
 
     if (!result || result === textToTranslate) return null;

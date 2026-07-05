@@ -29,6 +29,7 @@ export interface TranslationTask {
     dmPrompt: string;
     status?: "QUEUED" | "PROCESSING";
     isManual?: boolean;
+    dictMatches?: Record<string, string>;
 }
 
 export class Mutex {
@@ -241,6 +242,22 @@ export class GeminiChannelWorker {
                     try {
                         const messagesToTranslate = chunk.map(t => ({ id: t.messageId, text: t.text }));
 
+                        let combinedDmPrompt = dmPrompt;
+                        const chunkGlossary: Record<string, string> = {};
+                        for (const t of chunk) {
+                            if (t.dictMatches) {
+                                Object.assign(chunkGlossary, t.dictMatches);
+                            }
+                        }
+                        const glossaryKeys = Object.keys(chunkGlossary);
+                        if (glossaryKeys.length > 0) {
+                            let glossaryStr = "\n\n# User Dictionary / Glossary\nCRITICAL: You MUST strictly use the exact translations provided below for the following specific terms. Do NOT translate them differently:\n";
+                            for (const k of glossaryKeys) {
+                                glossaryStr += `- "${k}": "${chunkGlossary[k]}"\n`;
+                            }
+                            combinedDmPrompt += glossaryStr;
+                        }
+
                         let fetchPromise;
                         if (engine.startsWith("deepseek")) {
                             fetchPromise = translateBatchWithDeepSeek(
@@ -248,7 +265,7 @@ export class GeminiChannelWorker {
                                 messagesToTranslate,
                                 targetLang,
                                 apiKey,
-                                dmPrompt,
+                                combinedDmPrompt,
                                 engine
                             );
                         } else {
@@ -257,8 +274,9 @@ export class GeminiChannelWorker {
                                 messagesToTranslate,
                                 targetLang,
                                 apiKey,
-                                dmPrompt,
-                                engine
+                                combinedDmPrompt,
+                                engine,
+                                this.abortController.signal
                             );
                         }
 
