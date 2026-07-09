@@ -145,6 +145,12 @@ export const settings = definePluginSettings({
         name: "Translate Outgoing Messages",
         description: "Auto-translate your own messages.",
     },
+    previewOutgoing: {
+        type: OptionType.BOOLEAN,
+        default: false,
+        name: "Preview Outgoing Translation",
+        description: "Show translated text in chatbox before sending.",
+    },
     skipOwnMessages: {
         type: OptionType.BOOLEAN,
         default: true,

@@ -8,7 +8,7 @@ import "./styles.css";
 
 import { addMessageAccessory, removeMessageAccessory } from "@api/MessageAccessories";
 import definePlugin from "@utils/types";
-import { Forms } from "@webpack/common";
+import { ComponentDispatch, Forms } from "@webpack/common";
 
 import { resetTranslationQueues,safeTranslate } from "./api/translate";
 import { ApiKeysManager } from "./components/ApiKeyInput";
@@ -166,7 +166,18 @@ export default definePlugin({
 
             if (result) {
                 TranslationCache.getInstance().outgoingCache.set(result.trim(), message.content);
-                message.content = result;
+                
+                if (settings.store.previewOutgoing) {
+                    message.content = "";
+                    message.invalid = true;
+                    // Use a slight delay to ensure Discord has cleared the chatbox after the Enter keypress
+                    setTimeout(() => {
+                        ComponentDispatch.dispatchToLastSubscribed("TEXTAREA_FOCUS");
+                        ComponentDispatch.dispatchToLastSubscribed("INSERT_TEXT", { rawText: result, plainText: result });
+                    }, 50);
+                } else {
+                    message.content = result;
+                }
             }
         } finally {
             translatingActiveCount--;
