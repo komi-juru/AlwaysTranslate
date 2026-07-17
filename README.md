@@ -42,6 +42,7 @@ mkdir userplugins
 cd userplugins
 git clone https://github.com/komi-juru/AlwaysTranslate.git alwaysTranslate
 pnpm build
+pnpm inject
 ```
 
 ---
