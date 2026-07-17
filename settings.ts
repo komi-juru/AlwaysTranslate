@@ -201,11 +201,17 @@ export const settings = definePluginSettings({
         name: "Hide Original Message",
         description: "Hide original text.",
     },
-    preserveEmojis: {
+    hideEmojis: {
         type: OptionType.BOOLEAN,
-        default: true,
-        name: "Preserve Emojis & Mentions",
-        description: "Keep emojis and tags.",
+        default: false,
+        name: "Hide Emojis",
+        description: "Completely remove emojis from translation.",
+    },
+    hideMentions: {
+        type: OptionType.BOOLEAN,
+        default: false,
+        name: "Hide Mentions",
+        description: "Completely remove @usernames from translation.",
     },
     translationColor: {
         type: OptionType.CUSTOM,
@@ -214,6 +220,10 @@ export const settings = definePluginSettings({
     ui_translationColor: {
         type: OptionType.COMPONENT,
         component: () => null,
+    },
+    _cacheVersion: {
+        type: OptionType.CUSTOM,
+        default: 0,
     },
     ui_clearCache: {
         type: OptionType.COMPONENT,

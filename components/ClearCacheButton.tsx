@@ -24,6 +24,7 @@ export function ClearCacheButton() {
                 onClick={() => {
                     TranslationCache.getInstance().clearAll();
                     settings.store.geminiQuotaLocks = {};
+                    settings.store._cacheVersion = (settings.store._cacheVersion || 0) + 1;
                     setCount(0);
                     Toasts.show({
                         message: "All translation caches have been cleared.",

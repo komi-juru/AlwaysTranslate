@@ -18,6 +18,7 @@ export class TranslationCache {
     private persistentCache = new Map<string, string>();
     private sharedCache = new Map<string, string>();
     public outgoingCache = new Map<string, string>();
+    public cacheRevision = 0;
 
     private pending = new Map<string, { source: string, promise: Promise<string | null> }>();
     private readonly maxSize: number;
@@ -268,6 +269,7 @@ export class TranslationCache {
         if (deleted) {
             this.isDirty = true;
             this.saveToStorage();
+            this.cacheRevision++;
         }
     }
 
@@ -275,8 +277,10 @@ export class TranslationCache {
         this.persistentCache.clear();
         this.volatileCache.clear();
         this.sharedCache.clear();
+        this.outgoingCache.clear();
         this.isDirty = true;
         this.saveToStorage();
+        this.cacheRevision++;
     }
 
     public getChannelCount(channelId: string): number {

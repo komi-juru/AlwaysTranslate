@@ -146,30 +146,34 @@ export function getGeminiBatchState(channelId: string, messageId: string) {
     };
 }
 
-function tokenizeText(text: string, preserveEmojis: boolean): { textToTranslate: string, tokens: string[] } {
+function tokenizeText(text: string, hideEmojis: boolean, hideMentions: boolean): { textToTranslate: string, tokens: string[] } {
     const tokens: string[] = [];
     let textToTranslate = text;
 
-    if (!preserveEmojis) {
-        // Strip emojis completely from the text that will be translated
+    if (hideEmojis) {
+        // Remove emojis completely
         textToTranslate = textToTranslate
             .replace(/<a?:\w+:\d+>/g, "")
             .replace(/[\p{Emoji_Presentation}\p{Extended_Pictographic}]/gu, "");
     }
+    
+    if (hideMentions) {
+        // Remove mentions completely
+        textToTranslate = textToTranslate.replace(/<@[!&]?\d+>/g, "");
+    }
 
-    const preserveRegex = preserveEmojis ? PRESERVE_WITH_EMOJIS : PRESERVE_BASE;
-
-    textToTranslate = textToTranslate.replace(preserveRegex, match => {
+    // Tokenize remaining special elements (URLs, code blocks, etc.)
+    textToTranslate = textToTranslate.replace(PRESERVE_BASE, match => {
         const id = tokens.length;
         tokens.push(match);
-        return `{@${id}@}`;
+        return `[token${id}]`;
     });
 
     return { textToTranslate, tokens };
 }
 
 function restoreTokens(text: string, tokens: string[]): string {
-    return text.replace(/\{\s*@\s*(\d+)\s*@\s*\}/g, (match, idStr) => {
+    return text.replace(/\[\s*token(\d+)\s*\]/gi, (match, idStr) => {
         const id = parseInt(idStr, 10);
         return tokens[id] !== undefined ? tokens[id] : match;
     });
@@ -222,7 +226,7 @@ export async function safeTranslate(
     if (!shouldTranslate(content, targetLang)) return null;
 
     // 1. Tokenize (Extract mentions, code blocks, emojis)
-    let { textToTranslate, tokens } = tokenizeText(content.trim(), settings.store.preserveEmojis);
+    let { textToTranslate, tokens } = tokenizeText(content.trim(), settings.store.hideEmojis, settings.store.hideMentions);
 
     // 2. Custom Dictionary Substitution
     const isAI = engine?.startsWith("gemini") || engine?.startsWith("deepseek");

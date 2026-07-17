@@ -60,6 +60,17 @@ export function useTranslationExecution({
         }
     }, [cachedTranslated]);
 
+    // Reset displayed translation when cache is cleared
+    const [lastRevision, setLastRevision] = useState(() => TranslationCache.getInstance().cacheRevision);
+    useEffect(() => {
+        const currentRevision = TranslationCache.getInstance().cacheRevision;
+        if (currentRevision !== lastRevision) {
+            setLastRevision(currentRevision);
+            setTranslatedText(null);
+            setIsTranslating(false);
+        }
+    });
+
     useEffect(() => {
         // If we already have the text from cache, we don't need to fetch
         if (cachedTranslated) {

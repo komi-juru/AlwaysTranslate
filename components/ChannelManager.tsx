@@ -301,6 +301,7 @@ export function ChannelManager() {
                                                     style={{ minWidth: "140px" }}
                                                     onClick={() => {
                                                         TranslationCache.getInstance().clearChannel(ch.id);
+                                                        settings.store._cacheVersion = (settings.store._cacheVersion || 0) + 1;
                                                         setCacheTick(t => t + 1);
                                                         Toasts.show({
                                                             message: "Channel cache cleared.",

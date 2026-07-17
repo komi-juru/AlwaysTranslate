@@ -37,7 +37,8 @@ export function TranslationAccessory({ message }: { message: Message }) {
         channelList,
         translationMode,
         manualTranslationEngine,
-        preserveEmojis
+        hideEmojis,
+        _cacheVersion
     } = settings.use([
         "hideOriginal",
         "showSeparator",
@@ -52,7 +53,8 @@ export function TranslationAccessory({ message }: { message: Message }) {
         "channelList",
         "translationMode",
         "manualTranslationEngine",
-        "preserveEmojis"
+        "hideEmojis",
+        "_cacheVersion"
     ]);
 
     const { allowed, config } = getChannelConfig(message.channel_id);
@@ -206,7 +208,7 @@ export function TranslationAccessory({ message }: { message: Message }) {
     let displayText = translatedText;
 
     if (!hideOriginal) {
-        if (preserveEmojis) {
+        if (hideEmojis) {
             displayText = displayText
                 .replace(/<a?:\w+:\d+>/g, "")
                 .replace(/[\p{Emoji_Presentation}\p{Extended_Pictographic}]/gu, "");
