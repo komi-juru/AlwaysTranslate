@@ -48,7 +48,6 @@ pnpm inject
 ---
 
 ## Update
-Pull the latest changes and rebuild.
 ```bash
 cd Vencord/src/userplugins/alwaysTranslate
 git pull
