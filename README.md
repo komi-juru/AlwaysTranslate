@@ -10,7 +10,7 @@ Real-time AI translation for Vencord.
 ## Features
 
 - **AI Translation** – Context-aware translations that preserve tone and slang.
-- **Eco Mode** – Batch messages and save up to 90% on API costs with DeepSeek Context Caching.
+- **Eco Mode** – Reduce API costs by grouping messages together.
 - **Outgoing Translation** – Write in your language and send translated messages while keeping the original visible.
 - **Custom Dictionary** – Override translations for names, game terms, and other custom phrases.
 - **Per-Channel Settings** – Configure different languages and translation engines for each server or DM.
