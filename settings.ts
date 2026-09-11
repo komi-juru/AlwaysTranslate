@@ -32,6 +32,10 @@ export const settings = definePluginSettings({
         name: "GitHub Link",
         component: (): ReactNode => null,
     },
+    ui_overview: {
+        type: OptionType.COMPONENT,
+        component: (): ReactNode => null,
+    },
     header_translation: {
         type: OptionType.COMPONENT,
         component: (): ReactNode => null,
@@ -39,34 +43,34 @@ export const settings = definePluginSettings({
     targetLang: {
         type: OptionType.SELECT,
         default: "auto",
-        name: "Target Language",
-        description: "Translate everything to this language.",
-        options: [...LANGUAGES],
+        displayName: "My reading language",
+        description: "Incoming messages are translated into this language. Discord language follows your client language.",
+        options: LANGUAGES.map(l => l.value === "auto" ? { ...l, label: "Discord language", default: true } : l),
     },
 
     translationMode: {
         type: OptionType.SELECT,
         default: "global",
-        name: "Translation Mode",
-        description: "Translate everywhere, or only in selected channels.",
+        displayName: "Automatic translation scope",
+        description: "Choose where automatic translation runs. Set channel-specific languages and engines below.",
         options: [
-            { label: "🌐 Global (Translate All)", value: "global" },
-            { label: "🎯 Whitelist (Selected Only)", value: "whitelist" }
+            { label: "All channels", value: "global", default: true },
+            { label: "Selected channels only", value: "whitelist" }
         ],
     },
     translationEngine: {
         type: OptionType.SELECT,
         default: "gemini",
-        name: "Default Translation Engine",
-        description: "Default engine for new channels.",
-        options: [...GLOBAL_ENGINE_OPTIONS],
+        displayName: "Default automatic engine",
+        description: "Off disables default automatic translation. Channel overrides and the manual button can still translate.",
+        options: GLOBAL_ENGINE_OPTIONS.map(o => ({ ...o, label: o.value === "disable" ? "Off" : o.label, default: o.value === "gemini" })),
     },
     manualTranslationEngine: {
         type: OptionType.SELECT,
         default: "gemini",
-        name: "Manual Translation Engine",
-        description: "Engine for the manual translate button.",
-        options: [...GLOBAL_ENGINE_OPTIONS],
+        displayName: "Manual button engine",
+        description: "Engine used by Translate Now in the chat bar. This works independently of the default automatic engine.",
+        options: GLOBAL_ENGINE_OPTIONS.map(o => ({ ...o, label: o.value === "disable" ? "Off" : o.label, default: o.value === "gemini" })),
     },
     deeplApiKey: {
         type: OptionType.CUSTOM,
@@ -107,24 +111,12 @@ export const settings = definePluginSettings({
         component: (): ReactNode => null,
     },
     APIEcoModeThreshold: {
-        type: OptionType.SLIDER,
-        name: "API Eco Mode Threshold (Messages)",
-        description: "Wait for N messages to batch translate.",
-        markers: [1, 3, 5, 10, 25, 50, 100, 250],
+        type: OptionType.CUSTOM,
         default: 3,
-        componentProps: { equidistant: true },
     },
     APIMaxBatchWait: {
-        type: OptionType.SLIDER,
-        name: "API Max Batch Wait Time (sec)",
-        description: "Max wait time before forcing translation.",
-        markers: [0, 5, 10, 15, 30, 60, 120, 180, 300],
+        type: OptionType.CUSTOM,
         default: 10,
-        componentProps: {
-            equidistant: true,
-            onValueRender: (v: number) => v === 0 ? "∞" : `${v}s`,
-            onMarkerRender: (v: number) => v === 0 ? "∞" : `${v}`
-        },
     },
 
     header_management: {
@@ -143,26 +135,26 @@ export const settings = definePluginSettings({
     translateOutgoing: {
         type: OptionType.BOOLEAN,
         default: false,
-        name: "Translate Outgoing Messages",
-        description: "Auto-translate your own messages.",
+        displayName: "Translate outgoing messages",
+        description: "Translate before sending. Set the other person's language in channel settings. Auto does not detect their language for outgoing messages.",
     },
     previewOutgoing: {
         type: OptionType.BOOLEAN,
         default: false,
-        name: "Preview Outgoing Translation",
+        displayName: "Preview before sending",
         description: "Show translated text in chatbox before sending.",
     },
     skipOwnMessages: {
         type: OptionType.BOOLEAN,
         default: true,
-        name: "Skip Self Messages",
+        displayName: "Skip my incoming messages",
         description: "Don't translate your own messages.",
     },
 
     ignorePrefix: {
         type: OptionType.STRING,
         default: "!",
-        name: "Ignore Prefix",
+        displayName: "Skip translation prefix",
         description: "Skip messages starting with this.",
     },
 
@@ -177,7 +169,7 @@ export const settings = definePluginSettings({
     dictionaryCaseSensitive: {
         type: OptionType.BOOLEAN,
         default: false,
-        name: "Case Sensitive (English)",
+        displayName: "Case-sensitive dictionary (English)",
         description: "Match uppercase/lowercase exactly.",
     },
     dictionaryManager: {
@@ -193,25 +185,25 @@ export const settings = definePluginSettings({
     showSeparator: {
         type: OptionType.BOOLEAN,
         default: true,
-        name: "Show Separator Line",
+        displayName: "Show separator line",
         description: "Show line above translations.",
     },
     hideOriginal: {
         type: OptionType.BOOLEAN,
         default: false,
-        name: "Hide Original Message",
+        displayName: "Hide original message",
         description: "Hide original text.",
     },
     hideEmojis: {
         type: OptionType.BOOLEAN,
         default: false,
-        name: "Hide Emojis",
+        displayName: "Hide emojis",
         description: "Completely remove emojis from translation.",
     },
     hideMentions: {
         type: OptionType.BOOLEAN,
         default: false,
-        name: "Hide Mentions",
+        displayName: "Hide mentions",
         description: "Completely remove @usernames from translation.",
     },
     translationColor: {

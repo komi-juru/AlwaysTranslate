@@ -42,8 +42,8 @@ function DeeplApiKeyInput({ setValue }: { setValue: (val: string) => void }) {
                 Your DeepL API key (ends with :fx for Free Tier)
             </Forms.FormText>
         <div style={{ marginTop: "8px" }}>
-            <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                <div style={{ flex: 1 }}>
+            <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: "8px" }}>
+                <div style={{ flex: "1 1 180px", minWidth: 0 }}>
                     <TextInput
                         type={show ? "text" : "password"}
                         value={deeplApiKey}
@@ -119,8 +119,8 @@ function GeminiApiKeyInput({ setValue }: { setValue: (val: string) => void }) {
                 Your Gemini API Key
             </Forms.FormText>
         <div style={{ marginTop: "8px" }}>
-            <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                <div style={{ flex: 1 }}>
+            <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: "8px" }}>
+                <div style={{ flex: "1 1 180px", minWidth: 0 }}>
                     <TextInput
                         type={show ? "text" : "password"}
                         value={geminiApiKey}
@@ -229,8 +229,8 @@ function DeepSeekApiKeyInput({ setValue }: { setValue: (val: string) => void }) 
                 Your DeepSeek API Key
             </Forms.FormText>
         <div style={{ marginTop: "8px" }}>
-            <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                <div style={{ flex: 1 }}>
+            <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: "8px" }}>
+                <div style={{ flex: "1 1 180px", minWidth: 0 }}>
                     <TextInput
                         type={show ? "text" : "password"}
                         value={deepseekApiKey}
@@ -303,35 +303,26 @@ function DeepSeekApiKeyInput({ setValue }: { setValue: (val: string) => void }) 
 }
 
 export function ApiKeysManager() {
-    const [expanded, setExpanded] = useState(false);
+    const { geminiApiKey, deepseekApiKey, deeplApiKey, geminiModel, deepseekModel } = settings.use(["geminiApiKey", "deepseekApiKey", "deeplApiKey", "geminiModel", "deepseekModel"]);
+    const engines = [
+        { name: "Gemini", key: geminiApiKey, model: geminiModel, url: "https://aistudio.google.com/api-keys", Input: GeminiApiKeyInput },
+        { name: "DeepSeek", key: deepseekApiKey, model: deepseekModel, url: "https://platform.deepseek.com/", Input: DeepSeekApiKeyInput },
+        { name: "DeepL", key: deeplApiKey, model: "", url: "https://app.deepl.com/your-account/keys", Input: DeeplApiKeyInput }
+    ];
 
     return (
-        <div style={{ marginBottom: "24px" }}>
-            <div
-                onClick={() => setExpanded(!expanded)}
-                style={{
-                    display: "flex",
-                    alignItems: "center",
-                    cursor: "pointer",
-                    padding: "12px",
-                    background: "var(--background-modifier-hover)",
-                    borderRadius: "8px",
-                    userSelect: "none"
-                }}
-            >
-                <div style={{ marginRight: "12px", fontSize: "12px", transform: expanded ? "rotate(90deg)" : "rotate(0deg)", transition: "transform 0.2s ease" }}>
-                    ▶
-                </div>
-                <Forms.FormTitle style={{ margin: 0, cursor: "pointer" }}>API Keys</Forms.FormTitle>
-            </div>
-
-            {expanded && (
-                <div style={{ marginTop: "16px", paddingLeft: "16px", borderLeft: "2px solid var(--background-modifier-accent)" }}>
-                    <GeminiApiKeyInput setValue={() => {}} />
-                    <DeepSeekApiKeyInput setValue={() => {}} />
-                    <DeeplApiKeyInput setValue={() => {}} />
-                </div>
-            )}
-        </div>
+        <section className="bat-settings-section" aria-label="API connections">
+            <h3>API connections</h3>
+            <p className="bat-settings-description">{engines.filter(e => e.key.trim()).length} of 3 keys saved. Expand an engine to edit or test its key. Saved does not mean verified.</p>
+            {engines.map(({ name, key, model, url, Input }) => (
+                <details key={name} className="bat-settings-details bat-settings-connection">
+                    <summary><strong>{name}</strong><span className="bat-settings-badge">{key.trim() ? "Key saved" : "Key missing"}</span>{model && <span className="bat-settings-model">{model}</span>}</summary>
+                    <div className="bat-settings-detail-body">
+                        <a href={url} target="_blank" rel="noreferrer">Get a {name} API key ↗</a>
+                        <Input setValue={() => {}} />
+                    </div>
+                </details>
+            ))}
+        </section>
     );
 }

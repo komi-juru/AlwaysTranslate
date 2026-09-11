@@ -26,9 +26,10 @@ export interface PartialChannel {
 export function ChannelManager() {
     const [query, setQuery] = useState("");
     const [selectedChannel, setSelectedChannel] = useState<string | undefined>();
-    const [showAdvanced, setShowAdvanced] = useState(false);
+    const [showIdInput, setShowIdInput] = useState(false);
+    const [expandedChannels, setExpandedChannels] = useState<string[]>([]);
     const [cacheTick, setCacheTick] = useState(0);
-    const { channelList: channels = [], translationMode = "global" } = settings.use(["channelList", "translationMode"]);
+    const { channelList: channels = [], translationMode = "global", translationEngine = "gemini" } = settings.use(["channelList", "translationMode", "translationEngine"]);
 
     const activeChannels = [...channels];
 
@@ -127,7 +128,7 @@ export function ChannelManager() {
 
         if (channels.some((c: PartialChannel) => c.id === cleanId)) {
             Toasts.show({
-                message: "Channel already in whitelist.",
+                message: "Channel already added.",
                 type: Toasts.Type.FAILURE,
                 id: Toasts.genId()
             });
@@ -164,14 +165,14 @@ export function ChannelManager() {
     return (
         <section style={{ marginTop: 16 }}>
             <Forms.FormTitle>
-                {translationMode === "global" ? "Channel Overrides" : "Translation Channels"}
+                {translationMode === "global" ? "Channel-specific settings" : "Selected channels"}
             </Forms.FormTitle>
             <Forms.FormText>
                 {translationMode === "global"
-                    ? "Global mode is active. Only channels with custom settings are listed here. They override global defaults."
-                    : "Whitelist mode is active. Only these channels will be translated."}
+                    ? "Other channels use the default engine. Add a channel here to change its engine or language, or turn off automatic translation there."
+                    : "Automatic translation runs only in the channels listed here, using each channel's engine setting."}
                 <br />
-                Outgoing messages in these channels will be translated INTO the channel's language.
+                Channel language means the other person's language: incoming messages are translated into your reading language; outgoing messages are translated into the channel language. Auto detects incoming text only.
             </Forms.FormText>
 
             <Divider style={{ marginTop: "16px", marginBottom: "16px" }} />
@@ -194,14 +195,14 @@ export function ChannelManager() {
                         </div>
                     </div>
 
-                    <div
+                    <button type="button" className="bat-settings-text-button" aria-expanded={showIdInput}
                         style={{ cursor: "pointer", color: "var(--text-muted)", fontSize: "13px", display: "inline-flex", alignItems: "center", gap: "4px", width: "fit-content", userSelect: "none" }}
-                        onClick={() => setShowAdvanced(!showAdvanced)}
+                        onClick={() => setShowIdInput(!showIdInput)}
                     >
-                        {showAdvanced ? "▼" : "▶"} Advanced Options
-                    </div>
+                        {showIdInput ? "▼" : "▶"} Add by channel ID
+                    </button>
 
-                    {showAdvanced && (
+                    {showIdInput && (
                         <div style={{ display: "flex", gap: "8px", alignItems: "center", flexWrap: "wrap" }}>
                             <div style={{ flex: "1 1 200px", maxWidth: "300px" }}>
                                 <TextInput
@@ -227,15 +228,15 @@ export function ChannelManager() {
             <div style={{ marginBottom: "16px", background: "var(--background-secondary-alt)", padding: "12px", borderRadius: "8px", borderLeft: "4px solid var(--text-brand)" }}>
                 <div style={{ fontWeight: 600, color: "var(--header-primary)", marginBottom: "4px" }}>
                     Translation Scope: <span style={{ color: "var(--text-brand)" }}>
-                        {translationMode === "global" ? "Global (All Channels)" : `Selected Channels (${activeChannels.length})`}
+                        {translationMode === "global" ? "All channels" : `Selected channels (${activeChannels.length})`}
                     </span>
                 </div>
                 <div style={{ fontSize: "13px", color: "var(--text-muted)" }}>
                     {translationMode === "global"
-                        ? "Auto-translate is active everywhere. Channels below have specific overrides."
+                        ? `Default automatic engine: ${translationEngine === "disable" ? "Off" : GLOBAL_ENGINE_OPTIONS.find(o => o.value === translationEngine)?.label || translationEngine}. Channel settings below take priority.`
                         : (activeChannels.length === 0
-                            ? "No channels selected. Translation is currently disabled everywhere."
-                            : "Translation is currently restricted to the selected channels below.")}
+                            ? "No channels selected. Automatic translation is off until you add a channel. The manual button is separate."
+                            : "Automatic translation is restricted to the selected channels below. The manual button is separate.")}
                 </div>
             </div>
 
@@ -243,7 +244,7 @@ export function ChannelManager() {
                 {activeChannels.length === 0 ? (
                     <Forms.FormText>
                         {translationMode === "global"
-                            ? "No overrides added. Translation is enabled globally with default settings."
+                            ? "No channel-specific settings. All channels follow your default automatic engine."
                             : "No channels added. Add a channel to translate it."}
                     </Forms.FormText>
                 ) : (
@@ -256,7 +257,7 @@ export function ChannelManager() {
                                 <div style={{ display: "flex", flexDirection: "column", gap: "8px", paddingLeft: "12px", borderLeft: "2px solid var(--background-modifier-accent)" }}>
                                     {channels.map((ch: PartialChannel) => (
                                         <div key={ch.id} style={{ display: "flex", flexDirection: "column", gap: "8px", background: "var(--background-secondary)", padding: "12px", borderRadius: "8px" }}>
-                                            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "12px" }}>
+                                            <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", justifyContent: "space-between", gap: "12px" }}>
                                     <div style={{ flex: "1 1 auto", minWidth: 0, marginRight: "16px" }}>
                                         <div style={{ fontWeight: 600, color: "var(--text-normal)", marginBottom: "2px", padding: "2px 0", lineHeight: "1.3", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
                                             {getChannelName(ch.id)}
@@ -266,10 +267,11 @@ export function ChannelManager() {
                                         </div>
                                     </div>
 
-                                    <div style={{ display: "flex", alignItems: "center", gap: "12px", flex: "0 0 auto" }}>
-                                        {!showAdvanced && (
+                                    <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: "12px", flex: "1 1 100%" }}>
+                                        {(
                                             <>
                                                 <div style={{ width: "160px", flexShrink: 0 }}>
+                                                    <div className="bat-settings-field-label">Automatic engine</div>
                                                     <SearchableSelect
                                                         value={ch.engine ?? "default"}
                                                         options={engineOpts}
@@ -282,19 +284,23 @@ export function ChannelManager() {
                                                 </div>
 
                                                 <div style={{ width: "160px", flexShrink: 0 }}>
+                                                    <div className="bat-settings-field-label">Channel language</div>
                                                     <SearchableSelect
                                                         value={ch.lang}
                                                         options={[...LANGUAGES]}
                                                         onChange={(val: string) => updateChannel(ch.id, { lang: val })}
-                                                        placeholder="Source Language"
+                                                        placeholder="Channel language"
                                                         popoutPosition="left"
                                                     />
                                                 </div>
                                             </>
                                         )}
 
-                                        <div style={{ display: "flex", gap: "8px" }}>
-                                            {showAdvanced && (
+                                        <div style={{ display: "flex", flexWrap: "wrap", gap: "8px" }}>
+                                            <button type="button" className="bat-settings-text-button" aria-expanded={expandedChannels.includes(ch.id)} onClick={() => setExpandedChannels(ids => ids.includes(ch.id) ? ids.filter(id => id !== ch.id) : [...ids, ch.id])}>
+                                                {expandedChannels.includes(ch.id) ? "Hide details" : "More settings"}
+                                            </button>
+                                            {expandedChannels.includes(ch.id) && (
                                                 <Button
                                                     color={Button.Colors.PRIMARY}
                                                     look={Button.Looks.FILLED}
@@ -326,7 +332,7 @@ export function ChannelManager() {
                                     </div>
                                 </div>
 
-                                            {showAdvanced && ((ch.engine && (ch.engine.startsWith("gemini") || ch.engine.startsWith("deepseek"))) || (!ch.engine && ((settings.store.translationEngine ?? "gemini").startsWith("gemini") || (settings.store.translationEngine ?? "gemini").startsWith("deepseek")))) && (
+                                            {expandedChannels.includes(ch.id) && ((ch.engine && (ch.engine.startsWith("gemini") || ch.engine.startsWith("deepseek"))) || ((!ch.engine || ch.engine === "default") && (translationEngine.startsWith("gemini") || translationEngine.startsWith("deepseek")))) && (
                                                 <div style={{ marginTop: "8px" }}>
                                                     <div style={{ fontSize: "12px", fontWeight: 600, color: "var(--text-muted)", marginBottom: "4px" }}>
                                                         Custom Prompt / Instruction (Optional)

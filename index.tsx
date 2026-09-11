@@ -18,6 +18,7 @@ import { ColorPickerInput } from "./components/ColorPickerInput";
 import { DictionaryManager } from "./components/DictionaryManager";
 import { GithubLinkInjector } from "./components/GithubLinkInjector";
 import { ManualBatchChatBarIcon, TranslateHeaderButton, TranslateIcon } from "./components/HeaderBarIcon";
+import { SettingsOverview } from "./components/SettingsOverview";
 import { SettingsPresets } from "./components/SettingsPresets";
 import { TranslationAccessory } from "./components/TranslationAccessory";
 import { CustomDictionaryStore } from "./dict";
@@ -33,10 +34,11 @@ const SettingsHeader = ({ title }: { title: string }) => (
 
 // Wire up dynamic COMPONENT settings (avoids circular imports)
 settings.def.ui_githubLink.component = GithubLinkInjector;
+settings.def.ui_overview.component = SettingsOverview;
 settings.def.header_translation.component = () => <SettingsHeader title="⚙️ Translation Setup" />;
 settings.def.header_dictionary.component = () => <SettingsHeader title="📖 Custom Dictionary" />;
 settings.def.dictionaryManager.component = DictionaryManager;
-settings.def.header_management.component = () => <SettingsHeader title="🛡️ Chat Whitelist Management" />;
+settings.def.header_management.component = () => <SettingsHeader title="Channels & Outgoing Messages" />;
 settings.def.header_design.component = () => <SettingsHeader title="🎨 UI & Design" />;
 settings.def.channelManager.component = ChannelManager;
 settings.def.ui_apiKeys.component = ApiKeysManager;

@@ -5,13 +5,15 @@
  */
 
 import { ChatBarButton, ChatBarButtonFactory } from "@api/ChatButtons";
+import { plugins } from "@api/PluginManager";
+import { openPluginModal } from "@components/settings";
 import { findComponentByCodeLazy } from "@webpack";
 import { Menu, Popout, SelectedChannelStore, Toasts, useRef, useState, useStateFromStores } from "@webpack/common";
 
 import { reScheduleAllWorkers } from "../api/translate";
 import { deeplWorkers, geminiWorkers } from "../api/worker";
 import { CHANNEL_ENGINE_OPTIONS, GLOBAL_ENGINE_OPTIONS, LANGUAGES } from "../constants";
-import { addChannel, removeChannel,settings, updateChannel } from "../settings";
+import { addChannel, settings, updateChannel } from "../settings";
 import { triggerManualBatch } from "../utils/manual";
 import { DeepLIcon, DeepSeekIcon,GeminiIcon } from "./Icons";
 
@@ -42,8 +44,10 @@ export function TranslateHeaderButton() {
         translateOutgoing = false,
         hideOriginal = false,
         translationMode = "global",
-        manualTranslationEngine = "gemini"
-    } = settings.use(["channelList", "translationEngine", "translateOutgoing", "hideOriginal", "translationMode", "manualTranslationEngine"]);
+        manualTranslationEngine = "gemini",
+        APIEcoModeThreshold = 3,
+        APIMaxBatchWait = 10
+    } = settings.use(["channelList", "translationEngine", "translateOutgoing", "hideOriginal", "translationMode", "manualTranslationEngine", "APIEcoModeThreshold", "APIMaxBatchWait"]);
 
 
     const channelConfig = channelList.find(c => c.id === channelId);
@@ -67,222 +71,83 @@ export function TranslateHeaderButton() {
 
     const renderMenu = () => {
         if (!channelId) return null;
-
-        const channels = settings.store.channelList;
-        const isChannelListed = channels.some(c => c.id === channelId);
-
-        const toggleChannelWhitelist = () => {
-            if (isChannelListed) {
-                removeChannel(channelId);
-                const msg = translationMode === "global"
-                    ? "Channel override removed."
-                    : "Translation disabled for this channel.";
-                Toasts.show({ message: msg, type: Toasts.Type.SUCCESS, id: Toasts.genId() });
-            } else {
-                addChannel(channelId, "auto");
-                const msg = translationMode === "global"
-                    ? "Channel override added."
-                    : "Translation enabled for this channel.";
-                Toasts.show({ message: msg, type: Toasts.Type.SUCCESS, id: Toasts.genId() });
-            }
-        };
-
-        const engineOpts = CHANNEL_ENGINE_OPTIONS.map(opt => {
-            if (opt.value === "default") {
-                const globalLabel = GLOBAL_ENGINE_OPTIONS.find(o => o.value === translationEngine)?.label || "Unknown";
-                return { ...opt, label: `Default (${globalLabel})` };
-            }
-            return opt;
-        });
-
-        const currentEngine = isChannelListed
-            ? (channelConfig?.engine || "default")
-            : "default";
-
-
-
-        const autoEngineItems = (
-                <Menu.MenuGroup label="Auto Translation Engine">
-                    {engineOpts.map(opt => (
-                        <Menu.MenuRadioItem
-                            key={opt.value}
-                            id={`engine-${opt.value}`}
-                            group="bat-auto-engine"
-                            label={
-                                opt.label
-                            }
-                            checked={currentEngine === opt.value}
-                            dontCloseOnActionIf={() => true}
-                            action={() => {
-                                if (opt.value === "default") {
-                                    if (isChannelListed) updateChannel(channelId, { engine: undefined });
-                                } else {
-                                    if (!isChannelListed) {
-                                        addChannel(channelId, "auto");
-                                        const msg = translationMode === "global"
-                                            ? "Channel override added."
-                                            : "Translation enabled for this channel.";
-                                        Toasts.show({ message: msg, type: Toasts.Type.SUCCESS, id: Toasts.genId() });
-                                    }
-                                    updateChannel(channelId, { engine: opt.value });
-                                }
-                            }}
-                        />
-                    ))}
-                </Menu.MenuGroup>
-        );
-
-        const toggles = (
-            <Menu.MenuGroup>
-                <Menu.MenuCheckboxItem
-                    id="toggle-outgoing"
-                    label="Translate My Typing (Outgoing)"
-                    checked={settings.store.translateOutgoing}
-                    dontCloseOnActionIf={() => true}
-                    action={() => { settings.store.translateOutgoing = !settings.store.translateOutgoing; }}
-                />
-                <Menu.MenuCheckboxItem
-                    id="toggle-hide-original"
-                    label="Hide Original Message"
-                    checked={settings.store.hideOriginal}
-                    dontCloseOnActionIf={() => true}
-                    action={() => { settings.store.hideOriginal = !settings.store.hideOriginal; }}
-                />
-            </Menu.MenuGroup>
-        );
-
-        const activeChannelsCount = channelList.length;
-        const scopeText = translationMode === "global"
-            ? "Global (All Channels)"
-            : `Selected Channels (${activeChannelsCount})`;
-
-        const whitelistLabel = translationMode === "global"
-            ? "Add Custom Settings Override"
-            : "Whitelist This Channel";
-
-        const whitelistItems = (
-            <Menu.MenuGroup label={`Translation Scope: ${scopeText}`}>
-                <Menu.MenuCheckboxItem
-                    id="whitelist-toggle"
-                    label={whitelistLabel}
-                    checked={isChannelListed}
-                    dontCloseOnActionIf={() => true}
-                    action={toggleChannelWhitelist}
-                />
-            </Menu.MenuGroup>
-        );
-
-        const manualEngineItems = (
-            <Menu.MenuGroup>
-                <Menu.MenuItem id="manual-engine-select" label="Manual Translate Engine">
-                    {GLOBAL_ENGINE_OPTIONS.map(opt => (
-                        <Menu.MenuRadioItem
-                            key={opt.value}
-                            id={`manual-engine-${opt.value}`}
-                            group="bat-manual-engine"
-                            label={
-                                opt.label
-                            }
-                            checked={manualTranslationEngine === opt.value}
-                            dontCloseOnActionIf={() => true}
-                            action={() => {
-                                settings.store.manualTranslationEngine = opt.value;
-                            }}
-                        />
-                    ))}
-                </Menu.MenuItem>
-            </Menu.MenuGroup>
-        );
-
-        const applyPreset = (name: string, threshold: number, waitMs: number) => {
-            settings.store.APIEcoModeThreshold = threshold;
-            settings.store.APIMaxBatchWait = waitMs;
-            reScheduleAllWorkers();
-            Toasts.show({
-                message: `Applied ${name} Preset!`,
-                type: Toasts.Type.SUCCESS,
-                id: Toasts.genId()
-            });
-        };
-
-        const presetItems = (
-            <Menu.MenuGroup>
-                <Menu.MenuItem id="eco-preset-select" label="Eco Mode Presets">
-                    <Menu.MenuItem
-                        id="preset-realtime"
-                        label="⚡ Real-time"
-                        action={() => applyPreset("Real-time", 1, 0)}
-                    />
-                    <Menu.MenuItem
-                        id="preset-balance"
-                        label="⚖️ Balance"
-                        action={() => applyPreset("Balance", 3, 10)}
-                    />
-                    <Menu.MenuItem
-                        id="preset-economy"
-                        label="💰 Economy"
-                        action={() => applyPreset("Economy", 10, 30)}
-                    />
-                    <Menu.MenuItem
-                        id="preset-sleep"
-                        label="💤 Sleep"
-                        action={() => applyPreset("Sleep", 250, 0)}
-                    />
-                </Menu.MenuItem>
-            </Menu.MenuGroup>
-        );
-
-        if (!isChannelListed) {
-            return (
-                <Menu.Menu navId="bat-translate-menu" onClose={() => setShow(false)} aria-label="Translate Options">
-                    {whitelistItems}
-                    <Menu.MenuSeparator />
-                    {autoEngineItems}
-                    <Menu.MenuSeparator />
-                    {manualEngineItems}
-                    <Menu.MenuSeparator />
-                    {presetItems}
-                    <Menu.MenuSeparator />
-                    {toggles}
-                </Menu.Menu>
-            );
-        }
-
-        const languageItems = LANGUAGES.map(lang => (
-            <Menu.MenuRadioItem
-                key={lang.value}
-                id={`lang-${lang.value}`}
-                group="bat-source-language"
-                label={lang.label}
-                checked={channelConfig?.lang === lang.value}
-                dontCloseOnActionIf={() => true}
-                action={() => {
-                    updateChannel(channelId, { lang: lang.value });
-                }}
-            />
-        ));
-
+        const engineLabel = (value: string) => value === "disable" ? "Off" : GLOBAL_ENGINE_OPTIONS.find(o => o.value === value)?.label ?? value;
+        const currentEngine = channelConfig?.engine || "default";
+        const currentLanguage = channelConfig?.lang || "auto";
+        const presets = [
+            { name: "Real-time", threshold: 1, wait: 0 },
+            { name: "Balanced", threshold: 3, wait: 10 },
+            { name: "Economy", threshold: 10, wait: 30 },
+            { name: "Sleep", threshold: 250, wait: 0 }
+        ];
+        const selectedPreset = presets.find(p => p.threshold === APIEcoModeThreshold && p.wait === APIMaxBatchWait);
         return (
-            <Menu.Menu navId="bat-translate-menu" onClose={() => setShow(false)} aria-label="Translate Options">
-                {whitelistItems}
-                <Menu.MenuSeparator />
-                {autoEngineItems}
-                <Menu.MenuSeparator />
-                {manualEngineItems}
-                <Menu.MenuSeparator />
-                <Menu.MenuGroup>
-                    <Menu.MenuItem id="lang-select" label="Source Language (Incoming)">
-                        {languageItems}
+            <Menu.Menu navId="bat-translate-menu" onClose={() => setShow(false)} aria-label="AlwaysTranslate settings">
+                <Menu.MenuGroup label="This channel">
+                    <Menu.MenuItem id="auto-engine-select" label={`Automatic translation: ${isActive ? engineLabel(effectiveEngine) : "Off"}`}
+                        subtext={!isChannelListed && translationMode !== "global" ? "Choose an engine to enable this channel." : "Off keeps the channel language and custom prompt."}>
+                        {CHANNEL_ENGINE_OPTIONS.map(opt => (
+                            <Menu.MenuRadioItem key={opt.value} id={`engine-${opt.value}`} group="bat-auto-engine"
+                                label={opt.value === "default" ? `Follow default (${engineLabel(translationEngine)})` : engineLabel(opt.value)}
+                                checked={!isChannelListed && translationMode !== "global" ? opt.value === "disable" : currentEngine === opt.value}
+                                dontCloseOnActionIf={() => true}
+                                action={() => {
+                                    addChannel(channelId, "auto");
+                                    updateChannel(channelId, { engine: opt.value === "default" ? undefined : opt.value });
+                                }} />
+                        ))}
+                    </Menu.MenuItem>
+                    <Menu.MenuItem id="lang-select" label={`Channel language: ${LANGUAGES.find(l => l.value === currentLanguage)?.label ?? currentLanguage}`}
+                        subtext="Incoming source and outgoing target. Auto Detect applies to incoming messages only.">
+                        {LANGUAGES.map(lang => (
+                            <Menu.MenuRadioItem key={lang.value} id={`lang-${lang.value}`} group="bat-channel-language"
+                                label={lang.label} checked={currentLanguage === lang.value} dontCloseOnActionIf={() => true}
+                                action={() => {
+                                    const exists = settings.store.channelList.some(c => c.id === channelId);
+                                    addChannel(channelId, lang.value);
+                                    // Keep excluded channels off when saving a language.
+                                    updateChannel(channelId, { lang: lang.value,
+                                        ...(!exists && settings.store.translationMode !== "global" ? { engine: "disable" } : {}) });
+                                }} />
+                        ))}
                     </Menu.MenuItem>
                 </Menu.MenuGroup>
                 <Menu.MenuSeparator />
-                {presetItems}
+                <Menu.MenuGroup label="All channels — shared settings">
+                    <Menu.MenuItem id="translation-scope" label={`Automatic scope: ${translationMode === "global" ? "All channels" : "Selected channels only"}`} disabled />
+                    <Menu.MenuItem id="manual-engine-select" label={`Manual button engine: ${engineLabel(manualTranslationEngine)}`}>
+                        {GLOBAL_ENGINE_OPTIONS.map(opt => (
+                            <Menu.MenuRadioItem key={opt.value} id={`manual-engine-${opt.value}`} group="bat-manual-engine"
+                                label={engineLabel(opt.value)} checked={manualTranslationEngine === opt.value} dontCloseOnActionIf={() => true}
+                                action={() => { settings.store.manualTranslationEngine = opt.value; }} />
+                        ))}
+                    </Menu.MenuItem>
+                    <Menu.MenuItem id="eco-preset-select" label={`Batch timing: ${selectedPreset?.name ?? "Custom"}`}
+                        subtext="Applies to Gemini and DeepSeek across all channels.">
+                        {presets.map(preset => (
+                            <Menu.MenuRadioItem key={preset.name} id={`preset-${preset.name.toLowerCase()}`} group="bat-batch-preset"
+                                label={preset.name} subtext={`${preset.threshold} messages / ${preset.wait ? `up to ${preset.wait}s` : "no timer"}`}
+                                checked={selectedPreset === preset} dontCloseOnActionIf={() => true}
+                                action={() => {
+                                    settings.store.APIEcoModeThreshold = preset.threshold;
+                                    settings.store.APIMaxBatchWait = preset.wait;
+                                    reScheduleAllWorkers();
+                                }} />
+                        ))}
+                    </Menu.MenuItem>
+                    <Menu.MenuCheckboxItem id="toggle-outgoing" label="Translate my outgoing messages" checked={translateOutgoing}
+                        dontCloseOnActionIf={() => true} action={() => { settings.store.translateOutgoing = !settings.store.translateOutgoing; }} />
+                    <Menu.MenuCheckboxItem id="toggle-hide-original" label="Hide original messages" checked={hideOriginal}
+                        dontCloseOnActionIf={() => true} action={() => { settings.store.hideOriginal = !settings.store.hideOriginal; }} />
+                </Menu.MenuGroup>
                 <Menu.MenuSeparator />
-                {toggles}
+                <Menu.MenuItem id="open-settings" label="Open full settings" action={() => {
+                    setShow(false);
+                    openPluginModal(plugins.AlwaysTranslate);
+                }} />
             </Menu.Menu>
         );
     };
-
     return (
         <Popout
             position="bottom"
