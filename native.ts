@@ -8,26 +8,41 @@ import { app,IpcMainInvokeEvent } from "electron";
 import fs from "fs/promises";
 import path from "path";
 
-export async function batDeeplFetch(_: IpcMainInvokeEvent, isFree: boolean, apiKey: string, payload: string) {
+const requests = new Map<string, AbortController>();
+
+async function translationFetch(event: IpcMainInvokeEvent, requestId: string, url: string, init: RequestInit, timeout: number) {
+    const key = event.sender.id + ":" + requestId;
+    const controller = new AbortController();
+    requests.set(key, controller);
+    const timer = setTimeout(() => controller.abort(), timeout);
+    try {
+        const res = await fetch(url, { ...init, signal: controller.signal });
+        return { ok: res.ok, status: res.status, data: await res.text() };
+    } catch (e) {
+        return { ok: false, status: -1, data: String(e) };
+    } finally {
+        clearTimeout(timer);
+        requests.delete(key);
+    }
+}
+
+export async function batCancelRequest(event: IpcMainInvokeEvent, requestId: string) {
+    requests.get(event.sender.id + ":" + requestId)?.abort();
+}
+
+export async function batDeeplFetch(event: IpcMainInvokeEvent, isFree: boolean, apiKey: string, payload: string, requestId: string) {
     const url = isFree
         ? "https://api-free.deepl.com/v2/translate"
         : "https://api.deepl.com/v2/translate";
 
-    try {
-        const res = await fetch(url, {
+    return translationFetch(event, requestId, url, {
             method: "POST",
             headers: {
                 "Content-Type": "application/json",
                 "Authorization": `DeepL-Auth-Key ${apiKey}`
             },
             body: payload
-        });
-
-        const text = await res.text();
-        return { ok: res.ok, status: res.status, data: text };
-    } catch (e) {
-        return { ok: false, status: -1, data: String(e) };
-    }
+        }, 30000);
 }
 
 export async function batDeeplUsageFetch(_: IpcMainInvokeEvent, isFree: boolean, apiKey: string) {
@@ -50,39 +65,25 @@ export async function batDeeplUsageFetch(_: IpcMainInvokeEvent, isFree: boolean,
     }
 }
 
-export async function batGeminiFetch(_: IpcMainInvokeEvent, apiUrl: string, apiKey: string, payload: string) {
-    try {
-        const res = await fetch(`${apiUrl}?key=${apiKey}`, {
+export async function batGeminiFetch(event: IpcMainInvokeEvent, apiUrl: string, apiKey: string, payload: string, requestId: string) {
+    return translationFetch(event, requestId, `${apiUrl}?key=${apiKey}`, {
             method: "POST",
             headers: {
                 "Content-Type": "application/json"
             },
             body: payload
-        });
-
-        const text = await res.text();
-        return { ok: res.ok, status: res.status, data: text };
-    } catch (e) {
-        return { ok: false, status: -1, data: String(e) };
-    }
+        }, 300000);
 }
 
-export async function batDeepSeekFetch(_: IpcMainInvokeEvent, apiUrl: string, apiKey: string, payload: string) {
-    try {
-        const res = await fetch(apiUrl, {
+export async function batDeepSeekFetch(event: IpcMainInvokeEvent, apiUrl: string, apiKey: string, payload: string, requestId: string) {
+    return translationFetch(event, requestId, apiUrl, {
             method: "POST",
             headers: {
                 "Content-Type": "application/json",
                 "Authorization": `Bearer ${apiKey}`
             },
             body: payload
-        });
-
-        const text = await res.text();
-        return { ok: res.ok, status: res.status, data: text };
-    } catch (e) {
-        return { ok: false, status: -1, data: String(e) };
-    }
+        }, 300000);
 }
 
 export async function batDeepSeekBalanceFetch(_: IpcMainInvokeEvent, apiKey: string) {

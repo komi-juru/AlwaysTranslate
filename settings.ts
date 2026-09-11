@@ -6,6 +6,7 @@
 
 import { definePluginSettings } from "@api/Settings";
 import { OptionType } from "@utils/types";
+import type { ReactNode } from "react";
 
 import { GLOBAL_ENGINE_OPTIONS, LANGUAGES } from "./constants";
 
@@ -29,11 +30,11 @@ export const settings = definePluginSettings({
     ui_githubLink: {
         type: OptionType.COMPONENT,
         name: "GitHub Link",
-        component: () => null,
+        component: (): ReactNode => null,
     },
     header_translation: {
         type: OptionType.COMPONENT,
-        component: () => null,
+        component: (): ReactNode => null,
     },
     targetLang: {
         type: OptionType.SELECT,
@@ -74,7 +75,7 @@ export const settings = definePluginSettings({
     ui_apiKeys: {
         type: OptionType.COMPONENT,
         name: "API Keys",
-        component: () => null,
+        component: (): ReactNode => null,
     },
 
     geminiApiKey: {
@@ -103,7 +104,7 @@ export const settings = definePluginSettings({
     },
     ui_presets: {
         type: OptionType.COMPONENT,
-        component: () => null,
+        component: (): ReactNode => null,
     },
     APIEcoModeThreshold: {
         type: OptionType.SLIDER,
@@ -119,7 +120,7 @@ export const settings = definePluginSettings({
         description: "Max wait time before forcing translation.",
         markers: [0, 5, 10, 15, 30, 60, 120, 180, 300],
         default: 10,
-        componentProps: { 
+        componentProps: {
             equidistant: true,
             onValueRender: (v: number) => v === 0 ? "∞" : `${v}s`,
             onMarkerRender: (v: number) => v === 0 ? "∞" : `${v}`
@@ -128,7 +129,7 @@ export const settings = definePluginSettings({
 
     header_management: {
         type: OptionType.COMPONENT,
-        component: () => null,
+        component: (): ReactNode => null,
     },
     channelList: {
         type: OptionType.CUSTOM,
@@ -137,7 +138,7 @@ export const settings = definePluginSettings({
     channelManager: {
         type: OptionType.COMPONENT,
         // Assigned dynamically in index.tsx to avoid circular imports
-        component: () => null,
+        component: (): ReactNode => null,
     },
     translateOutgoing: {
         type: OptionType.BOOLEAN,
@@ -167,7 +168,7 @@ export const settings = definePluginSettings({
 
     header_dictionary: {
         type: OptionType.COMPONENT,
-        component: () => null,
+        component: (): ReactNode => null,
     },
     customDictionary: {
         type: OptionType.CUSTOM,
@@ -181,12 +182,12 @@ export const settings = definePluginSettings({
     },
     dictionaryManager: {
         type: OptionType.COMPONENT,
-        component: () => null,
+        component: (): ReactNode => null,
     },
 
     header_design: {
         type: OptionType.COMPONENT,
-        component: () => null,
+        component: (): ReactNode => null,
     },
 
     showSeparator: {
@@ -219,7 +220,7 @@ export const settings = definePluginSettings({
     },
     ui_translationColor: {
         type: OptionType.COMPONENT,
-        component: () => null,
+        component: (): ReactNode => null,
     },
     _cacheVersion: {
         type: OptionType.CUSTOM,
@@ -227,7 +228,7 @@ export const settings = definePluginSettings({
     },
     ui_clearCache: {
         type: OptionType.COMPONENT,
-        component: () => null,
+        component: (): ReactNode => null,
     },
 });
 

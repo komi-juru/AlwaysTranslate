@@ -4,6 +4,7 @@
  * SPDX-License-Identifier: GPL-3.0-or-later
  */
 
+import { Divider } from "@components/Divider";
 import { Button, ChannelStore, Forms, GuildStore, SearchableSelect, TextInput, Toasts, UserStore, useState, useStateFromStores } from "@webpack/common";
 
 import { CHANNEL_ENGINE_OPTIONS, GLOBAL_ENGINE_OPTIONS, LANGUAGES } from "../constants";
@@ -57,7 +58,7 @@ export function ChannelManager() {
         });
 
     const channelOptions = useStateFromStores([GuildStore, ChannelStore], () => {
-        const opts: { label: string, value: string }[] = [];
+        const opts: { label: string, value: string, isDm: boolean }[] = [];
         const seen = new Set<string>();
         try {
             const guilds = GuildStore?.getGuilds?.() ?? {};
@@ -65,7 +66,7 @@ export function ChannelManager() {
                 const guild = guilds[guildId];
                 const guildChannels = ChannelStore.getMutableGuildChannelsForGuild?.(guildId) ?? {};
                 for (const cId in guildChannels) {
-                    const ch = guildChannels[cId];
+                    const ch = guildChannels[cId] as typeof guildChannels[string] & { isHidden?: () => boolean };
                     const isHiddenPlugin = typeof ch.isHidden === "function" ? ch.isHidden() : false;
                     const isHiddenName = ch.name?.includes("___hidden___");
 
@@ -86,7 +87,7 @@ export function ChannelManager() {
 
                     if (!dmName && recipients && recipients.length > 0) {
                         try {
-                            const users = recipients.map((id: string) => typeof UserStore.getUser === "function" ? UserStore.getUser(id) : null).filter(Boolean);
+                            const users = recipients.map((id: string) => typeof UserStore.getUser === "function" ? UserStore.getUser(id) : null).filter((user): user is NonNullable<typeof user> => user !== null);
                             if (users.length > 0) {
                                 dmName = users.map((u: { globalName?: string; username?: string }) => u.globalName || u.username).join(", ");
                             }
@@ -127,7 +128,7 @@ export function ChannelManager() {
         if (channels.some((c: PartialChannel) => c.id === cleanId)) {
             Toasts.show({
                 message: "Channel already in whitelist.",
-                type: Toasts.Type.WARNING,
+                type: Toasts.Type.FAILURE,
                 id: Toasts.genId()
             });
             setSelectedChannel(undefined);
@@ -161,11 +162,11 @@ export function ChannelManager() {
     });
 
     return (
-        <Forms.FormSection style={{ marginTop: 16 }}>
+        <section style={{ marginTop: 16 }}>
             <Forms.FormTitle>
                 {translationMode === "global" ? "Channel Overrides" : "Translation Channels"}
             </Forms.FormTitle>
-            <Forms.FormText type="description">
+            <Forms.FormText>
                 {translationMode === "global"
                     ? "Global mode is active. Only channels with custom settings are listed here. They override global defaults."
                     : "Whitelist mode is active. Only these channels will be translated."}
@@ -173,7 +174,7 @@ export function ChannelManager() {
                 Outgoing messages in these channels will be translated INTO the channel's language.
             </Forms.FormText>
 
-            <Forms.FormDivider style={{ marginTop: "16px", marginBottom: "16px" }} />
+            <Divider style={{ marginTop: "16px", marginBottom: "16px" }} />
 
             <div>
                 <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
@@ -221,7 +222,7 @@ export function ChannelManager() {
                 </div>
             </div>
 
-            <Forms.FormDivider style={{ marginTop: "16px", marginBottom: "16px" }} />
+            <Divider style={{ marginTop: "16px", marginBottom: "16px" }} />
 
             <div style={{ marginBottom: "16px", background: "var(--background-secondary-alt)", padding: "12px", borderRadius: "8px", borderLeft: "4px solid var(--text-brand)" }}>
                 <div style={{ fontWeight: 600, color: "var(--header-primary)", marginBottom: "4px" }}>
@@ -240,7 +241,7 @@ export function ChannelManager() {
 
             <div>
                 {activeChannels.length === 0 ? (
-                    <Forms.FormText type="description">
+                    <Forms.FormText>
                         {translationMode === "global"
                             ? "No overrides added. Translation is enabled globally with default settings."
                             : "No channels added. Add a channel to translate it."}
@@ -295,8 +296,8 @@ export function ChannelManager() {
                                         <div style={{ display: "flex", gap: "8px" }}>
                                             {showAdvanced && (
                                                 <Button
-                                                    color={Button.Colors.YELLOW}
-                                                    look={Button.Looks.OUTLINED}
+                                                    color={Button.Colors.PRIMARY}
+                                                    look={Button.Looks.FILLED}
                                                     size={Button.Sizes.SMALL}
                                                     style={{ minWidth: "140px" }}
                                                     onClick={() => {
@@ -315,7 +316,7 @@ export function ChannelManager() {
                                             )}
                                             <Button
                                                 color={Button.Colors.RED}
-                                                look={Button.Looks.OUTLINED}
+                                                look={Button.Looks.FILLED}
                                                 size={Button.Sizes.SMALL}
                                                 onClick={() => removeCh(ch.id)}
                                             >
@@ -325,7 +326,7 @@ export function ChannelManager() {
                                     </div>
                                 </div>
 
-                                            {showAdvanced && ((ch.engine && (ch.engine.startsWith("gemini") || ch.engine.startsWith("deepseek"))) || (!ch.engine && (settings.store.translationEngine.startsWith("gemini") || settings.store.translationEngine.startsWith("deepseek")))) && (
+                                            {showAdvanced && ((ch.engine && (ch.engine.startsWith("gemini") || ch.engine.startsWith("deepseek"))) || (!ch.engine && ((settings.store.translationEngine ?? "gemini").startsWith("gemini") || (settings.store.translationEngine ?? "gemini").startsWith("deepseek")))) && (
                                                 <div style={{ marginTop: "8px" }}>
                                                     <div style={{ fontSize: "12px", fontWeight: 600, color: "var(--text-muted)", marginBottom: "4px" }}>
                                                         Custom Prompt / Instruction (Optional)
@@ -346,6 +347,6 @@ export function ChannelManager() {
                     </div>
                 )}
             </div>
-        </Forms.FormSection>
+        </section>
     );
 }

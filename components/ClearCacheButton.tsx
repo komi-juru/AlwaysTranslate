@@ -13,7 +13,7 @@ export function ClearCacheButton() {
     const [count, setCount] = useState(() => TranslationCache.getInstance().getTotalCount());
 
     return (
-        <Forms.FormSection style={{ marginBottom: "20px" }}>
+        <section style={{ marginBottom: "20px" }}>
             <Forms.FormTitle>Clear Cache</Forms.FormTitle>
             <Forms.FormText style={{ marginBottom: "8px" }}>
                 Clears all saved translation data from memory and storage.
@@ -35,6 +35,6 @@ export function ClearCacheButton() {
             >
                 Clear All Caches ({count})
             </Button>
-        </Forms.FormSection>
+        </section>
     );
 }

@@ -70,3 +70,18 @@ Configure your API key in the plugin settings.
 
 This plugin does not collect personal data. However, messages are sent to your chosen AI API; please use caution in channels with sensitive information.
 > **Disclaimer:** This plugin is not officially supported by Vencord.
+
+## Development checks
+
+From the Vencord repository root, after installing dependencies:
+
+```bash
+pnpm testTsc
+pnpm build
+pnpm exec eslint src/userplugins/alwaysTranslate
+node --test src/userplugins/alwaysTranslate/tests/regression.cjs
+```
+
+The regression tests use mocked APIs and storage; they do not send messages or consume API credits.
+
+Cache format v3 separates engines, models, channels, prompts, dictionaries, and text-processing options. Older translation caches are not reused because they lack this metadata; messages will be translated again as needed. The custom dictionary is preserved.

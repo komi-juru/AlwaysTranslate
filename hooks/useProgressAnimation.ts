@@ -55,7 +55,7 @@ export function useProgressAnimation({
                 if (isCountdown) {
                     const remaining = Math.max(0, targetDeadline.current - now);
                     const expectedProgress = remaining / BATCH_ACCUMULATION_TIME_GEMINI;
-                    
+
                     if (!wasCountdown.current) {
                         wasCountdown.current = true;
                         // Only jump to 1 if we are starting fresh (not continuing a previous leader's countdown)
@@ -63,9 +63,9 @@ export function useProgressAnimation({
                             currentProgressRef.current = 1;
                         }
                     }
-                    
+
                     const targetProgress = expectedProgress;
-                    
+
                     // Smooth physics trailing (0.15) for normal operation and reset jumps.
                     // But in the final 200ms, gradually stiffen the easing factor up to 1.0
                     // to guarantee a mathematically perfect landing at exactly 0.0 when remaining hits 0.
@@ -74,7 +74,7 @@ export function useProgressAnimation({
                         const ratio = 1 - (remaining / 200);
                         easeFactor = 0.15 + (0.85 * ratio);
                     }
-                    
+
                     currentProgressRef.current += (targetProgress - currentProgressRef.current) * easeFactor;
                 } else if (targetMaxWaitMs.current > 0 && targetEcoProgress.current < 1) {
                     // Max Wait 켜져있는 에코 모드 (시간과 개수 중 더 많이 찬 것을 따라감)

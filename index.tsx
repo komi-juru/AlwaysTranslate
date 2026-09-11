@@ -17,7 +17,7 @@ import { ClearCacheButton } from "./components/ClearCacheButton";
 import { ColorPickerInput } from "./components/ColorPickerInput";
 import { DictionaryManager } from "./components/DictionaryManager";
 import { GithubLinkInjector } from "./components/GithubLinkInjector";
-import { ManualBatchChatBarIcon, TranslateHeaderButton } from "./components/HeaderBarIcon";
+import { ManualBatchChatBarIcon, TranslateHeaderButton, TranslateIcon } from "./components/HeaderBarIcon";
 import { SettingsPresets } from "./components/SettingsPresets";
 import { TranslationAccessory } from "./components/TranslationAccessory";
 import { CustomDictionaryStore } from "./dict";
@@ -49,6 +49,7 @@ settings.def.ui_presets.component = SettingsPresets;
 export let pluginStarted = false;
 
 let translatingActiveCount = 0;
+let lifecycleGeneration = 0;
 
 export default definePlugin({
     name: "AlwaysTranslate",
@@ -59,21 +60,25 @@ export default definePlugin({
 
     // 🔄 Lifecycle 🔄
 
-    start() {
-        pluginStarted = true;
+    async start() {
+        const generation = ++lifecycleGeneration;
         resetTranslationQueues();
-        CustomDictionaryStore.getInstance().init();
-        TranslationCache.getInstance().init();
+        await Promise.all([CustomDictionaryStore.getInstance().init(), TranslationCache.getInstance().init()]);
+        if (generation !== lifecycleGeneration) return;
+        pluginStarted = true;
         addMessageAccessory("AlwaysTranslate", props => <TranslationAccessory message={props.message} />, 0);
     },
 
     chatBarButton: {
-        render: ManualBatchChatBarIcon
+        render: ManualBatchChatBarIcon,
+        icon: TranslateIcon
     },
 
     stop() {
+        lifecycleGeneration++;
         pluginStarted = false;
         TranslationCache.getInstance().flush();
+        CustomDictionaryStore.getInstance().flush();
         resetTranslationQueues();
         removeMessageAccessory("AlwaysTranslate");
 
@@ -110,6 +115,7 @@ export default definePlugin({
     // 📤 Outgoing Message Translation 📤
 
     async onBeforeMessageSend(channelId: string, message: any) {
+        if (!pluginStarted) return;
         if (!settings.store.translateOutgoing) return;
         if (!message.content) return;
 
@@ -122,8 +128,8 @@ export default definePlugin({
             return;
         }
 
-        const { translationEngine, deeplApiKey, geminiApiKey, deepseekApiKey } = settings.store;
-        let { targetLang } = settings.store;
+        const { translationEngine = "gemini", deeplApiKey, geminiApiKey, deepseekApiKey } = settings.store;
+        let targetLang: string = settings.store.targetLang || "auto";
 
         // Use per-channel language if configured
         if (config?.lang && config.lang !== "auto") {
@@ -165,8 +171,8 @@ export default definePlugin({
             );
 
             if (result) {
-                TranslationCache.getInstance().outgoingCache.set(result.trim(), message.content);
-                
+                TranslationCache.getInstance().setOutgoing(channelId, result, message.content);
+
                 if (settings.store.previewOutgoing) {
                     message.content = "";
                     message.invalid = true;

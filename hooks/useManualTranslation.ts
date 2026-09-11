@@ -10,7 +10,6 @@ import { TranslationCache } from "../utils/cache";
 import { useManualBatchVersion } from "../utils/manual";
 
 interface UseManualTranslationProps {
-    enableTranslation: boolean;
     isTranslating: boolean;
     manualCacheKey: string;
     shouldTranslateContent: boolean;
@@ -21,7 +20,6 @@ interface UseManualTranslationProps {
  * Hook to manage the manual batch translation state triggered by the chat bar icon.
  */
 export function useManualTranslation({
-    enableTranslation,
     isTranslating,
     manualCacheKey,
     shouldTranslateContent,
@@ -30,13 +28,6 @@ export function useManualTranslation({
     const manualVersion = useManualBatchVersion();
     const [isManual, setIsManual] = useState(false);
     const previousManualVersion = useRef(manualVersion);
-
-    // Reset manual state when plugin is disabled globally
-    useEffect(() => {
-        if (!enableTranslation) {
-            setIsManual(false);
-        }
-    }, [enableTranslation]);
 
     // Handle Manual Batch Request
     useEffect(() => {

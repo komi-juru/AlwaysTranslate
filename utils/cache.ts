@@ -7,6 +7,7 @@
 import { PluginNative } from "@utils/types";
 
 import { CACHE_MAX_SIZE, CACHE_PERSISTENT_MAX_SIZE, CACHE_SAVE_DEBOUNCE } from "../constants";
+import { getChannelCachePrefix } from "./hash";
 import { Logger } from "./logger";
 
 const Native = VencordNative.pluginHelpers.AlwaysTranslate as PluginNative<typeof import("../native")>;
@@ -16,8 +17,10 @@ export class TranslationCache {
 
     private volatileCache = new Map<string, string>();
     private persistentCache = new Map<string, string>();
-    private sharedCache = new Map<string, string>();
-    public outgoingCache = new Map<string, string>();
+    private outgoingCache = new Map<string, string>();
+    private initPromise: Promise<void> | null = null;
+    private globalGeneration = 0;
+    private channelGenerations = new Map<string, number>();
     public cacheRevision = 0;
 
     private pending = new Map<string, { source: string, promise: Promise<string | null> }>();
@@ -37,7 +40,11 @@ export class TranslationCache {
         return this.instance;
     }
 
-    public async init() {
+    public init(): Promise<void> {
+        return this.initPromise ??= this.initialize();
+    }
+
+    private async initialize() {
         await this.loadFromStorage();
         window.addEventListener("beforeunload", this.handleBeforeUnload);
     }
@@ -48,77 +55,40 @@ export class TranslationCache {
         }
     };
 
-    private extractLangAndHash(key: string): string | null {
-        const parts = key.split("_");
-        if (key.startsWith("c") && parts.length >= 4) {
-            return `${parts[1]}_${parts[3]}`;
-        }
-        return null;
-    }
-
-    private migrateKey(key: string): string {
-        // chan_1234|||gemini_ko_1234_5678 -> cXXX_ko_XXX_XXX
-        const match = key.match(/^chan_(\d+)\|\|\|gemini_([a-z]+)_(\d+)_(\d+)$/);
-        if (match) {
-            const channelId = match[1];
-            const targetLang = match[2];
-            const promptHash = parseInt(match[3], 10).toString(36);
-            const textHash = parseInt(match[4], 10).toString(36);
-            let shortChan = channelId;
-            try { shortChan = BigInt(channelId).toString(36); } catch {}
-            return `c${shortChan}_${targetLang}_${promptHash}_${textHash}`;
-        }
-        // If it's already a new format or unmatched, return as is
-        return key;
-    }
-
     private async loadFromStorage() {
         try {
             const data = await Native.batCacheLoad();
-            if (data) {
-                const parsed = JSON.parse(data);
-
-                if (parsed.version === 2 && parsed.entries) {
-                    // Version 2: Flat object
-                    let filtered = false;
-                    for (const [key, translated] of Object.entries(parsed.entries)) {
-                        if (key.startsWith("c")) {
-                            const newKey = this.migrateKey(key);
-                            if (newKey !== key) filtered = true;
-                            this.persistentCache.set(newKey, translated as string);
-                            const sharedKey = this.extractLangAndHash(newKey);
-                            if (sharedKey) this.sharedCache.set(sharedKey, translated as string);
-                        } else {
-                            filtered = true; // Dropping deepl
-                        }
-                    }
-                    if (filtered) {
-                        this.isDirty = true;
-                        this.saveToStorage();
-                    }
-                } else if (Array.isArray(parsed)) {
-                    // Legacy migration: Array of [key, { source, translated, isPersistent }]
-                    for (const [key, val] of parsed) {
-                        if (val && val.translated && (key.includes("gemini") || key.startsWith("c"))) {
-                            const newKey = this.migrateKey(key);
-                            this.persistentCache.set(newKey, val.translated);
-                            const sharedKey = this.extractLangAndHash(newKey);
-                            if (sharedKey) this.sharedCache.set(sharedKey, val.translated);
-                        }
-                    }
-                    this.isDirty = true;
-                    this.saveToStorage();
-                }
-
-                // Enforce persistent LRU
-                while (this.persistentCache.size > CACHE_PERSISTENT_MAX_SIZE) {
-                    const oldest = this.persistentCache.keys().next().value;
-                    if (oldest !== undefined) this.persistentCache.delete(oldest);
-                }
+            if (!data) return;
+            const parsed = JSON.parse(data);
+            // Older entries lack engine/model/dictionary metadata and cannot be reused safely.
+            if (parsed?.version !== 3 || !parsed.entries || typeof parsed.entries !== "object") return;
+            for (const [key, value] of Object.entries(parsed.entries)) {
+                if (key.startsWith("v3:") && typeof value === "string") this.persistentCache.set(key, value);
             }
-        } catch (e: unknown) {
-            Logger.warn("Cache", "Failed to load cache", e instanceof Error ? e : new Error(String(e)));
+            while (this.persistentCache.size > CACHE_PERSISTENT_MAX_SIZE) {
+                this.persistentCache.delete(this.persistentCache.keys().next().value!);
+            }
+        } catch (e) {
+            Logger.warn("Cache", "Failed to load cache", e);
         }
+    }
+
+    public getGeneration(key: string): string {
+        const channel = key.split(":")[1];
+        return this.globalGeneration + ":" + (this.channelGenerations.get(channel) || 0);
+    }
+
+    public setOutgoing(channelId: string, text: string, original: string) {
+        const key = getChannelCachePrefix(channelId) + text.trim();
+        this.outgoingCache.delete(key);
+        this.outgoingCache.set(key, original);
+        while (this.outgoingCache.size > CACHE_MAX_SIZE) {
+            this.outgoingCache.delete(this.outgoingCache.keys().next().value!);
+        }
+    }
+
+    public getOutgoing(channelId: string, text: string): string | undefined {
+        return this.outgoingCache.get(getChannelCachePrefix(channelId) + text.trim());
     }
 
     private performNativeSave(): Promise<void> {
@@ -128,10 +98,10 @@ export class TranslationCache {
 
             try {
                 const exportData = {
-                    version: 2,
+                    version: 3,
                     entries: Object.fromEntries(this.persistentCache)
                 };
-                await Native.batCacheSave(JSON.stringify(exportData));
+                if (!await Native.batCacheSave(JSON.stringify(exportData))) throw new Error("Native cache save failed");
             } catch (e: unknown) {
                 this.isDirty = true; // Revert flag on error
                 Logger.warn("Cache", "Failed to save cache", e instanceof Error ? e : new Error(String(e)));
@@ -168,11 +138,12 @@ export class TranslationCache {
 
     setPending(key: string, source: string, promise: Promise<string | null>) {
         this.pending.set(key, { source, promise });
-        promise.finally(() => {
+        const cleanup = () => {
             if (this.pending.get(key)?.promise === promise) {
                 this.pending.delete(key);
             }
-        });
+        };
+        void promise.then(cleanup, cleanup);
     }
 
     get(key: string): string | undefined {
@@ -202,19 +173,10 @@ export class TranslationCache {
         return this.volatileCache.get(key);
     }
 
-    public peekShared(targetLang: string, textHash: string): string | undefined {
-        return this.sharedCache.get(`${targetLang}_${textHash}`);
-    }
-
     set(key: string, translated: string, engine: string) {
         // Purge from both maps to avoid cross-map duplication
         this.persistentCache.delete(key);
         this.volatileCache.delete(key);
-
-        const sharedKey = this.extractLangAndHash(key);
-        if (sharedKey) {
-            this.sharedCache.set(sharedKey, translated);
-        }
 
         if (engine.startsWith("gemini") || engine.startsWith("deepseek")) {
             this.persistentCache.set(key, translated);
@@ -249,9 +211,9 @@ export class TranslationCache {
     }
 
     public clearChannel(channelId: string) {
-        let cId = channelId;
-        try { cId = BigInt(channelId).toString(36); } catch {}
-        const prefix = `c${cId}_`;
+        this.channelGenerations.set(channelId, (this.channelGenerations.get(channelId) || 0) + 1);
+        this.cacheRevision++;
+        const prefix = getChannelCachePrefix(channelId);
         let deleted = false;
 
         for (const key of this.persistentCache.keys()) {
@@ -266,17 +228,22 @@ export class TranslationCache {
             }
         }
 
+        for (const map of [this.pending, this.outgoingCache]) {
+            for (const key of map.keys()) if (key.startsWith(prefix)) map.delete(key);
+        }
+
         if (deleted) {
             this.isDirty = true;
             this.saveToStorage();
-            this.cacheRevision++;
         }
     }
 
     public clearAll() {
         this.persistentCache.clear();
         this.volatileCache.clear();
-        this.sharedCache.clear();
+        this.pending.clear();
+        this.globalGeneration++;
+        this.channelGenerations.clear();
         this.outgoingCache.clear();
         this.isDirty = true;
         this.saveToStorage();
@@ -284,9 +251,7 @@ export class TranslationCache {
     }
 
     public getChannelCount(channelId: string): number {
-        let cId = channelId;
-        try { cId = BigInt(channelId).toString(36); } catch {}
-        const prefix = `c${cId}_`;
+        const prefix = getChannelCachePrefix(channelId);
         let count = 0;
 
         for (const key of this.persistentCache.keys()) {

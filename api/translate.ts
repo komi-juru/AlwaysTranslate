@@ -6,17 +6,14 @@
 
 import { CustomDictionaryStore } from "../dict";
 import { getChannelConfig, settings } from "../settings";
-import { Logger } from "../utils/logger";
 import { shouldTranslate } from "../utils/message";
 import { getDictRegex } from "../utils/string";
 import { getGeminiActiveQuotaLock, showGeminiQuotaToast } from "./breaker";
-import { translationQueue } from "./queue";
-import { DeeplChannelWorker, deeplWorkers, GeminiChannelWorker, geminiWorkers, resetAllWorkers, reScheduleAllWorkers } from "./worker";
+import { DeeplChannelWorker, deeplWorkers, GeminiChannelWorker, geminiWorkers, reScheduleAllWorkers,resetAllWorkers } from "./worker";
 
-export { translationQueue, reScheduleAllWorkers };
+export { reScheduleAllWorkers };
 
 export function resetTranslationQueues() {
-    translationQueue.reset();
     resetAllWorkers();
 }
 
@@ -55,9 +52,11 @@ export async function translate(
             }
 
             const worker = geminiWorkers.get(channelId)!;
-            const taskId = Math.random().toString(36).slice(2);
+            const taskId = crypto.randomUUID();
             worker.enqueue({
-                id: taskId, messageId, channelId, text, resolve, targetLang, apiKey: engineKey, engine, dmPrompt, isManual, dictMatches
+                id: taskId, messageId, channelId, text, resolve, targetLang, apiKey: engineKey, engine, dmPrompt, isManual, dictMatches,
+                model: isDeepSeek ? settings.store.deepseekModel : settings.store.geminiModel,
+                endpoint: isDeepSeek ? settings.store.deepseekBaseUrl : undefined
             });
             if (!messageId) {
                 worker.flushNow();
@@ -86,7 +85,7 @@ export async function translate(
 
             const worker = deeplWorkers.get(key)!;
             worker.enqueue({
-                id: messageId, channelId, text, resolve, targetLang, apiKey: apiKeys.deepl, engine: "deepl", dmPrompt: ""
+                id: crypto.randomUUID(), messageId, channelId, text, resolve, targetLang, apiKey: apiKeys.deepl, engine: "deepl", dmPrompt: ""
             });
             if (!messageId) {
                 worker.flushNow();
@@ -110,13 +109,12 @@ export async function translate(
 
 // --- Tokenizer Helpers ---
 const PRESERVE_BASE = /<@[!&]?\d+>|<#\d+>|<[^>]+>|https?:\/\/[^\s]+|```[\s\S]*?```|`[^`]+`/gmu;
-const PRESERVE_WITH_EMOJIS = /<a?:\w+:\d+>|[\p{Emoji_Presentation}\p{Extended_Pictographic}]+|<@[!&]?\d+>|<#\d+>|<[^>]+>|https?:\/\/[^\s]+|```[\s\S]*?```|`[^`]+`/gmu;
 
 export function getGeminiBatchState(channelId: string, messageId: string) {
     const worker = geminiWorkers.get(channelId);
     if (!worker) return null;
 
-    const task = worker.registry.get(messageId);
+    const task = Array.from(worker.registry.values()).find(t => t.messageId === messageId);
     if (!task) return null;
 
     if (task.status === "PROCESSING") {
@@ -156,7 +154,7 @@ function tokenizeText(text: string, hideEmojis: boolean, hideMentions: boolean):
             .replace(/<a?:\w+:\d+>/g, "")
             .replace(/[\p{Emoji_Presentation}\p{Extended_Pictographic}]/gu, "");
     }
-    
+
     if (hideMentions) {
         // Remove mentions completely
         textToTranslate = textToTranslate.replace(/<@[!&]?\d+>/g, "");
@@ -191,7 +189,7 @@ function applyCustomDictionary(text: string, caseSensitive: boolean): { replaced
     if (dictKeys.length === 0) return { replacedText: text, matches };
 
     // Cache invalidation logic
-    const currentHash = dictKeys.join(",") + "_" + caseSensitive;
+    const currentHash = JSON.stringify([dictKeys, caseSensitive]);
     if (currentHash !== cachedDictHash) {
         dictKeys.sort((a, b) => b.length - a.length);
         cachedDictRegex = getDictRegex(dictKeys, caseSensitive);
@@ -231,7 +229,7 @@ export async function safeTranslate(
     // 2. Custom Dictionary Substitution
     const isAI = engine?.startsWith("gemini") || engine?.startsWith("deepseek");
     const { replacedText, matches } = applyCustomDictionary(textToTranslate, settings.store.dictionaryCaseSensitive);
-    
+
     // For AI, we keep original text and pass dictionary rules to prompt.
     // For DeepL, we inline replace the text.
     textToTranslate = isAI ? textToTranslate : replacedText;

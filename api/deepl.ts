@@ -21,15 +21,17 @@ function toDeepLLang(lang: string, isSource: boolean): string {
 import { PluginNative } from "@utils/types";
 
 import { Logger } from "../utils/logger";
-
 // Vencord Native Helper for CORS bypass
+import { nativeRequest } from "./nativeRequest";
+
 const Native = VencordNative.pluginHelpers.AlwaysTranslate as PluginNative<typeof import("../native")>;
 
 export async function translateWithDeepL(
     texts: string[],
     sourceLang: string,
     targetLang: string,
-    apiKey: string
+    apiKey: string,
+    signal?: AbortSignal
 ): Promise<string[]> {
     if (!apiKey) throw new Error("DeepL API Key is missing.");
 
@@ -42,7 +44,7 @@ export async function translateWithDeepL(
         ...(sourceLang !== "auto" && { source_lang: toDeepLLang(sourceLang, true) }),
     });
 
-    const res = await Native.batDeeplFetch(isFree, apiKey.trim(), payload);
+    const res = await nativeRequest(id => Native.batDeeplFetch(isFree, apiKey.trim(), payload, id), signal);
     if (!res.ok) {
         const raw = String(res.data || "");
         const lower = raw.toLowerCase();

@@ -21,7 +21,7 @@ export function triggerManualBatch(isGemini: boolean) {
 
 export function subscribeManualBatch(listener: (v: number) => void) {
     listeners.add(listener);
-    return () => listeners.delete(listener);
+    return () => { listeners.delete(listener); };
 }
 
 export function useManualBatchVersion() {

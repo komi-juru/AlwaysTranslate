@@ -4,18 +4,14 @@
  * SPDX-License-Identifier: GPL-3.0-or-later
  */
 
-// Removed isQuotaBlocked import
 import { ChatBarButton, ChatBarButtonFactory } from "@api/ChatButtons";
 import { findComponentByCodeLazy } from "@webpack";
-import { Menu, Popout, SelectedChannelStore, Toasts,useEffect, useRef, useState, useStateFromStores } from "@webpack/common";
+import { Menu, Popout, SelectedChannelStore, Toasts, useRef, useState, useStateFromStores } from "@webpack/common";
 
-// Removed getDeepLUsage import
-import { getDeepSeekBalance } from "../api/deepseek";
-import { reScheduleAllWorkers, resetTranslationQueues } from "../api/translate";
+import { reScheduleAllWorkers } from "../api/translate";
 import { deeplWorkers, geminiWorkers } from "../api/worker";
 import { CHANNEL_ENGINE_OPTIONS, GLOBAL_ENGINE_OPTIONS, LANGUAGES } from "../constants";
 import { addChannel, removeChannel,settings, updateChannel } from "../settings";
-import { TranslationCache } from "../utils/cache";
 import { triggerManualBatch } from "../utils/manual";
 import { DeepLIcon, DeepSeekIcon,GeminiIcon } from "./Icons";
 
@@ -24,7 +20,7 @@ const HeaderBarIconNative = findComponentByCodeLazy(
     'position:"bottom"'
 );
 
-function TranslateIcon(props: any) {
+export function TranslateIcon(props: any) {
     return (
         <svg viewBox="0 0 24 24" width={20} height={20} fill="currentColor" {...props}>
             <path d="M12.87 15.07l-2.54-2.51.03-.03c1.74-1.94 2.98-4.17 3.71-6.53H17V4h-7V2H8v2H1v1.99h11.17C11.5 7.92 10.44 9.75 9 11.35 8.07 10.32 7.3 9.19 6.69 8h-2c.73 1.63 1.73 3.17 2.98 4.56l-5.09 5.02L4 19l5-5 3.11 3.11.76-2.04zM18.5 10h-2L12 22h2l1.12-3h4.75L21 22h2l-4.5-12zm-2.62 7l1.62-4.33L19.12 17h-3.24z" />
@@ -36,27 +32,6 @@ export function TranslateHeaderButton() {
     const buttonRef = useRef(null);
     const [show, setShow] = useState(false);
 
-    const [dsUsageText, setDsUsageText] = useState<string | null>(null);
-    const lastFetchRef = useRef<number>(0);
-
-    // Fetch usage when dropdown opens (throttle to once per minute)
-    useEffect(() => {
-        if (show) {
-            const now = Date.now();
-            if (now - lastFetchRef.current > 60000) {
-                lastFetchRef.current = now;
-
-                if (settings.store.deepseekApiKey) {
-                    getDeepSeekBalance(settings.store.deepseekApiKey).then(res => {
-                        if (res) {
-                            // setDsUsageText(`(${res})`);
-                        }
-                    });
-                }
-            }
-        }
-    }, [show, settings.store.deeplApiKey, settings.store.deepseekApiKey]);
-
     // Reactively update when channel changes
     const channelId = useStateFromStores([SelectedChannelStore], () => SelectedChannelStore.getChannelId());
 
@@ -66,17 +41,10 @@ export function TranslateHeaderButton() {
         translationEngine = "gemini",
         translateOutgoing = false,
         hideOriginal = false,
-        enableTranslation = true,
         translationMode = "global",
         manualTranslationEngine = "gemini"
-    } = settings.use(["channelList", "translationEngine", "translateOutgoing", "hideOriginal", "enableTranslation", "translationMode", "manualTranslationEngine"]);
+    } = settings.use(["channelList", "translationEngine", "translateOutgoing", "hideOriginal", "translationMode", "manualTranslationEngine"]);
 
-    useEffect(() => {
-        if (!enableTranslation) {
-            resetTranslationQueues();
-            TranslationCache.getInstance().flush();
-        }
-    }, [enableTranslation]);
 
     const channelConfig = channelList.find(c => c.id === channelId);
     const isChannelListed = !!channelConfig;
@@ -85,7 +53,8 @@ export function TranslateHeaderButton() {
         ? channelConfig.engine
         : translationEngine;
 
-    const isActive = enableTranslation && (translationMode === "global" || isChannelListed);
+
+    const isActive = effectiveEngine !== "disable" && (translationMode === "global" || isChannelListed);
 
     const ActiveIcon = (props: any) => {
         if (!isActive) return <TranslateIcon {...props} />;
@@ -138,9 +107,8 @@ export function TranslateHeaderButton() {
                         <Menu.MenuRadioItem
                             key={opt.value}
                             id={`engine-${opt.value}`}
+                            group="bat-auto-engine"
                             label={
-
-                                opt.value.startsWith("deepseek") && dsUsageText ? `${opt.label} ${dsUsageText}` :
                                 opt.label
                             }
                             checked={currentEngine === opt.value}
@@ -211,8 +179,8 @@ export function TranslateHeaderButton() {
                         <Menu.MenuRadioItem
                             key={opt.value}
                             id={`manual-engine-${opt.value}`}
+                            group="bat-manual-engine"
                             label={
-                                opt.value.startsWith("deepseek") && dsUsageText ? `${opt.label} ${dsUsageText}` :
                                 opt.label
                             }
                             checked={manualTranslationEngine === opt.value}
@@ -284,6 +252,7 @@ export function TranslateHeaderButton() {
             <Menu.MenuRadioItem
                 key={lang.value}
                 id={`lang-${lang.value}`}
+                group="bat-source-language"
                 label={lang.label}
                 checked={channelConfig?.lang === lang.value}
                 dontCloseOnActionIf={() => true}
@@ -343,12 +312,11 @@ export const ManualBatchChatBarIcon: ChatBarButtonFactory = ({ isMainChat }) => 
     const {
         channelList = [],
         translationEngine = "gemini",
-        enableTranslation = true,
         translationMode = "global",
         manualTranslationEngine = "gemini",
         geminiApiKey,
         deeplApiKey
-    } = settings.use(["channelList", "translationEngine", "enableTranslation", "translationMode", "manualTranslationEngine", "geminiApiKey", "deeplApiKey"]);
+    } = settings.use(["channelList", "translationEngine", "translationMode", "manualTranslationEngine", "geminiApiKey", "deeplApiKey"]);
 
     if (!isMainChat || manualTranslationEngine === "disable") return null;
 
@@ -368,7 +336,7 @@ export const ManualBatchChatBarIcon: ChatBarButtonFactory = ({ isMainChat }) => 
 
     return (
         <ChatBarButton
-            className="bat-gemini-chatbar-wrapper"
+            buttonProps={{ className: "bat-gemini-chatbar-wrapper" }}
             tooltip="Translate Now"
             onClick={() => {
                 if (isGemini && !geminiApiKey) {

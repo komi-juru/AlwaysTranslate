@@ -14,7 +14,7 @@ import { useTranslationExecution } from "../hooks/useTranslationExecution";
 import { pluginStarted } from "../index";
 import { getChannelConfig, settings } from "../settings";
 import { TranslationCache } from "../utils/cache";
-import { getCacheKey, hashString } from "../utils/hash";
+import { getCacheKey } from "../utils/hash";
 import { shouldTranslate } from "../utils/message";
 import { LoadingIndicator } from "./LoadingIndicator";
 
@@ -27,16 +27,15 @@ export function TranslationAccessory({ message }: { message: Message }) {
         hideOriginal,
         showSeparator,
         translationColor,
-        translationEngine,
-        targetLang,
+        translationEngine = "gemini",
+        targetLang = "auto",
         deeplApiKey,
         geminiApiKey,
         deepseekApiKey,
         skipOwnMessages,
-        enableTranslation,
         channelList,
         translationMode,
-        manualTranslationEngine,
+        manualTranslationEngine = "gemini",
         hideEmojis,
         _cacheVersion
     } = settings.use([
@@ -49,18 +48,22 @@ export function TranslationAccessory({ message }: { message: Message }) {
         "geminiApiKey",
         "deepseekApiKey",
         "skipOwnMessages",
-        "enableTranslation",
         "channelList",
         "translationMode",
         "manualTranslationEngine",
         "hideEmojis",
+        "geminiModel",
+        "deepseekModel",
+        "deepseekBaseUrl",
+        "dictionaryCaseSensitive",
+        "hideMentions",
         "_cacheVersion"
     ]);
 
     const { allowed, config } = getChannelConfig(message.channel_id);
 
     const sourceLang = config?.lang ?? "auto";
-    let resolvedTarget = targetLang;
+    let resolvedTarget: string = targetLang;
     if (resolvedTarget === "auto") {
         resolvedTarget = document.documentElement.lang.split("-")[0] || "en";
     }
@@ -86,7 +89,6 @@ export function TranslationAccessory({ message }: { message: Message }) {
 
     // Manual Translation Hook
     const { isManual } = useManualTranslation({
-        enableTranslation,
         // Since we hoist `isTranslating`, we need to break the circular dependency.
         // We can pass false here if we don't have it yet, or use a ref.
         // Actually, we can just check pending cache directly in the hook
@@ -103,8 +105,8 @@ export function TranslationAccessory({ message }: { message: Message }) {
     let cachedTranslated = TranslationCache.getInstance().peek(cacheKey);
 
     // Outgoing cache fast-path: instantly display own sent translations
-    if (!cachedTranslated && !isManual) {
-        const outgoingHit = TranslationCache.getInstance().outgoingCache.get(message.content.trim());
+    if (!cachedTranslated && !isManual && message.author?.id === UserStore.getCurrentUser()?.id) {
+        const outgoingHit = TranslationCache.getInstance().getOutgoing(message.channel_id, message.content);
         if (outgoingHit) {
             cachedTranslated = outgoingHit;
             TranslationCache.getInstance().set(cacheKey, outgoingHit, activeEngine);
@@ -145,12 +147,6 @@ export function TranslationAccessory({ message }: { message: Message }) {
             cachedTranslated = autoCached;
         }
     }
-    // User wants to completely prevent DeepL from translating if a DeepSeek/Gemini translation exists.
-    // So we check the shared cache unconditionally.
-    const sharedCached = TranslationCache.getInstance().peekShared(resolvedTarget, hashString(message.content).toString(36));
-    if (sharedCached) {
-        cachedTranslated = sharedCached;
-    }
     // Execution Hook
     const { translatedText, isTranslating } = useTranslationExecution({
         messageId: message.id,
@@ -168,7 +164,8 @@ export function TranslationAccessory({ message }: { message: Message }) {
         geminiApiKey,
         deepseekApiKey,
         translationEngine,
-        cachedTranslated
+        cachedTranslated,
+        cacheRevision: _cacheVersion
     });
 
     // Visibility Hook (DOM side-effects)
@@ -205,7 +202,7 @@ export function TranslationAccessory({ message }: { message: Message }) {
         );
     }
 
-    let displayText = translatedText;
+    let displayText = translatedText || "";
 
     if (!hideOriginal) {
         if (hideEmojis) {

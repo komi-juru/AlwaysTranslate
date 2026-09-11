@@ -8,6 +8,7 @@ import { PluginNative } from "@utils/types";
 
 import { settings } from "../settings";
 import { buildDeepSeekSystemPrompt, buildDeepSeekUserPrompt } from "./geminiPrompt";
+import { nativeRequest } from "./nativeRequest";
 
 const Native = VencordNative.pluginHelpers.AlwaysTranslate as PluginNative<typeof import("../native")>;
 
@@ -17,7 +18,9 @@ export async function translateBatchWithDeepSeek(
     targetLang: string,
     apiKey: string,
     dmPrompt: string,
-    modelName: string
+    modelName: string,
+    signal?: AbortSignal,
+    baseUrl?: string
 ): Promise<{ id: string; text: string }[]> {
     if (!messages.length) return [];
     if (!apiKey) throw new Error("API Key not set");
@@ -25,8 +28,8 @@ export async function translateBatchWithDeepSeek(
     const systemPrompt = buildDeepSeekSystemPrompt();
     const userPrompt = buildDeepSeekUserPrompt(targetLang, dmPrompt, messages);
 
-    const endpoint = settings.store.deepseekBaseUrl || "https://api.deepseek.com/chat/completions";
-    const actualModelName = settings.store.deepseekModel || "deepseek-v4-flash";
+    const endpoint = baseUrl || settings.store.deepseekBaseUrl || "https://api.deepseek.com/chat/completions";
+    const actualModelName = modelName || settings.store.deepseekModel || "deepseek-v4-flash";
 
     const isR1 = actualModelName.toLowerCase().includes("r1") || actualModelName.toLowerCase().includes("reasoner");
 
@@ -54,7 +57,7 @@ export async function translateBatchWithDeepSeek(
 
     let res;
     try {
-        res = await Native.batDeepSeekFetch(endpoint, apiKey, JSON.stringify(payload));
+        res = await nativeRequest(id => Native.batDeepSeekFetch(endpoint, apiKey, JSON.stringify(payload), id), signal);
     } catch (e) {
         throw new Error("DeepSeek API network request failed");
     }

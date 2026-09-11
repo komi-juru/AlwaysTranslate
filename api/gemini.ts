@@ -7,9 +7,10 @@
 import { PluginNative } from "@utils/types";
 
 import { GEMINI_TEMPERATURE } from "../constants";
-import { settings } from "../settings";
+import { type GeminiQuotaKind, settings } from "../settings";
 import { Logger } from "../utils/logger";
 import { buildBatchTranslationPrompt, buildBatchUserPromptContext } from "./geminiPrompt";
+import { nativeRequest } from "./nativeRequest";
 
 const Native = VencordNative.pluginHelpers.AlwaysTranslate as PluginNative<typeof import("../native")>;
 
@@ -19,8 +20,8 @@ export interface PartialMessage {
     author?: { username?: string };
 }
 
-const getApiUrl = () => {
-    const model = settings.store.geminiModel || "gemini-3.1-flash-lite";
+const getApiUrl = (modelName?: string) => {
+    const model = modelName || settings.store.geminiModel || "gemini-3.1-flash-lite";
     return `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`;
 };
 
@@ -95,14 +96,14 @@ function classifyGeminiQuota(rawText: string, errData: any): GeminiQuotaKind | n
 
 
 // --- Helper: Unified API Fetch & Error Handling ---
-async function fetchGeminiAPI(payload: any, engine: string, apiKey: string): Promise<any> {
+async function fetchGeminiAPI(payload: any, engine: string, apiKey: string, signal?: AbortSignal): Promise<any> {
     if (!apiKey) throw new Error("Gemini API Key is missing.");
 
-    const apiUrl = getApiUrl();
+    const apiUrl = getApiUrl(engine);
 
     let res;
     try {
-        res = await Native.batGeminiFetch(apiUrl, apiKey, JSON.stringify(payload));
+        res = await nativeRequest(id => Native.batGeminiFetch(apiUrl, apiKey, JSON.stringify(payload), id), signal);
     } catch (e) {
         Logger.warn("Gemini", "Network error during fetch", e);
         throw new Error("Gemini API network request failed");
@@ -176,7 +177,8 @@ export async function translateBatchWithGemini(
     targetLang: string,
     apiKey: string,
     customPrompt: string,
-    engine: string
+    engine: string,
+    signal?: AbortSignal
 ): Promise<{ id: string, text: string }[]> {
     const systemInstruction = buildBatchTranslationPrompt(targetLang, customPrompt);
     const userPrompt = buildBatchUserPromptContext(messagesToTranslate);
@@ -201,7 +203,7 @@ export async function translateBatchWithGemini(
         }
     };
 
-    const text = await fetchGeminiAPI(payload, engine, apiKey);
+    const text = await fetchGeminiAPI(payload, engine, apiKey, signal);
 
     // Extract JSON array using regex to bypass conversational filler
     let jsonStr = text;

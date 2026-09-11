@@ -19,30 +19,21 @@ export function ColorPickerInput() {
         }
     } catch {}
 
-    const handleChange = (c: number) => {
-        settings.store.translationColor = "#" + c.toString(16).padStart(6, "0");
+    const handleChange = (c: number | null) => {
+        settings.store.translationColor = "#" + (c ?? 10157977).toString(16).padStart(6, "0");
     };
 
     return (
-        <Forms.FormSection style={{ marginBottom: "20px" }}>
+        <section style={{ marginBottom: "20px" }}>
             <Forms.FormTitle>Translation Color</Forms.FormTitle>
             <Forms.FormText style={{ marginBottom: "8px" }}>
                 Pick the text color for translated messages
             </Forms.FormText>
             <ColorPicker
-                defaultColor={10157977}
-                colors={[
-                    10157977, // Default green
-                    16777215, // White
-                    1146986, // Brand
-                    16711680, // Red
-                    16776960, // Yellow
-                    65535, // Cyan
-                    16711935 // Magenta
-                ]}
+                suggestedColors={["#9aff99", "#ffffff", "#ff0000", "#ffff00", "#00ffff", "#ff00ff"]}
                 color={numColor}
                 onChange={handleChange}
             />
-        </Forms.FormSection>
+        </section>
     );
 }

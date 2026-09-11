@@ -8,6 +8,7 @@ import { useEffect, useState } from "@webpack/common";
 
 import { safeTranslate } from "../api/translate";
 import { TranslationCache } from "../utils/cache";
+import { Logger } from "../utils/logger";
 
 interface UseTranslationExecutionProps {
     messageId: string;
@@ -25,7 +26,8 @@ interface UseTranslationExecutionProps {
     geminiApiKey?: string;
     deepseekApiKey?: string;
     translationEngine: string;
-    cachedTranslated: string | null;
+    cachedTranslated: string | undefined;
+    cacheRevision: number;
 }
 
 /**
@@ -47,9 +49,10 @@ export function useTranslationExecution({
     geminiApiKey,
     deepseekApiKey,
     translationEngine,
-    cachedTranslated
+    cachedTranslated,
+    cacheRevision
 }: UseTranslationExecutionProps) {
-    const [translatedText, setTranslatedText] = useState<string | null>(cachedTranslated);
+    const [translatedText, setTranslatedText] = useState<string | null>(cachedTranslated ?? null);
     const [isTranslating, setIsTranslating] = useState(false);
 
     // Sync state if cache updates synchronously (e.g. from manual batch)
@@ -59,17 +62,6 @@ export function useTranslationExecution({
             setIsTranslating(false);
         }
     }, [cachedTranslated]);
-
-    // Reset displayed translation when cache is cleared
-    const [lastRevision, setLastRevision] = useState(() => TranslationCache.getInstance().cacheRevision);
-    useEffect(() => {
-        const currentRevision = TranslationCache.getInstance().cacheRevision;
-        if (currentRevision !== lastRevision) {
-            setLastRevision(currentRevision);
-            setTranslatedText(null);
-            setIsTranslating(false);
-        }
-    });
 
     useEffect(() => {
         // If we already have the text from cache, we don't need to fetch
@@ -91,6 +83,8 @@ export function useTranslationExecution({
 
             setTranslatedText(null);
 
+            const cache = TranslationCache.getInstance();
+            const generation = cache.getGeneration(cacheKey);
             let promise = TranslationCache.getInstance().getPending(cacheKey, content);
             if (!promise) {
                 promise = safeTranslate(
@@ -98,7 +92,7 @@ export function useTranslationExecution({
                     sourceLang,
                     resolvedTarget,
                     currentEngine,
-                    { deepl: deeplApiKey, gemini: geminiApiKey, deepseek: deepseekApiKey },
+                    { deepl: deeplApiKey || "", gemini: geminiApiKey || "", deepseek: deepseekApiKey || "" },
                     channelId,
                     messageId,
                     isManual
@@ -107,22 +101,20 @@ export function useTranslationExecution({
             }
 
             setIsTranslating(true);
-            const result = await promise;
-
-            if (result) {
-                TranslationCache.getInstance().set(cacheKey, result, currentEngine);
-            }
-
-            if (!cancelled) {
-                setIsTranslating(false);
-                if (result) {
-                    setTranslatedText(result);
-                }
+            try {
+                const result = await promise;
+                if (cache.getGeneration(cacheKey) !== generation) return;
+                if (result) cache.set(cacheKey, result, currentEngine);
+                if (!cancelled) setTranslatedText(result);
+            } catch (e) {
+                Logger.warn("Translate", "Translation request failed", e);
+            } finally {
+                if (!cancelled) setIsTranslating(false);
             }
         };
 
         // Scroll debounce: skip API calls if user scrolls past message quickly (DeepL specific)
-        if (translationEngine === "deepl") {
+        if (currentEngine === "deepl") {
             timeoutId = setTimeout(run, 500);
         } else {
             run();
@@ -134,6 +126,7 @@ export function useTranslationExecution({
         };
     }, [
         cacheKey,
+        cacheRevision,
         content,
         allowed,
         isManual,

@@ -4,6 +4,7 @@
  * SPDX-License-Identifier: GPL-3.0-or-later
  */
 
+import { Divider } from "@components/Divider";
 import { Button, Forms, TextInput,useState } from "@webpack/common";
 
 import { useDictionary } from "../dict";
@@ -27,13 +28,13 @@ export function DictionaryManager() {
     };
 
     return (
-        <Forms.FormSection style={{ marginTop: 16 }}>
+        <section style={{ marginTop: 16 }}>
             <Forms.FormTitle>Custom Dictionary ({dictionaryEntries.length})</Forms.FormTitle>
-            <Forms.FormText type="description">
+            <Forms.FormText>
                 Force specific words to translate to your exact preferences (e.g., game jargon or names).<br/>Longer words are matched first. CJK strings ignore boundaries.
             </Forms.FormText>
 
-            <Forms.FormDivider style={{ marginTop: "16px", marginBottom: "16px" }} />
+            <Divider style={{ marginTop: "16px", marginBottom: "16px" }} />
 
             <div>
                 <div style={{ display: "flex", gap: "8px", alignItems: "center", flexWrap: "wrap", marginBottom: "16px" }}>
@@ -62,7 +63,7 @@ export function DictionaryManager() {
                 </div>
 
                 {dictionaryEntries.length === 0 ? (
-                    <Forms.FormText type="description">
+                    <Forms.FormText>
                         Your custom dictionary is empty.
                     </Forms.FormText>
                 ) : (
@@ -85,7 +86,7 @@ export function DictionaryManager() {
                                     color={Button.Colors.RED}
                                     onClick={() => remove(orig)}
                                     size={Button.Sizes.SMALL}
-                                    look={Button.Looks.OUTLINED}
+                                    look={Button.Looks.FILLED}
                                 >
                                     Remove
                                 </Button>
@@ -94,6 +95,6 @@ export function DictionaryManager() {
                     </div>
                 )}
             </div>
-        </Forms.FormSection>
+        </section>
     );
 }

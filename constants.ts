@@ -4,17 +4,13 @@
  * SPDX-License-Identifier: GPL-3.0-or-later
  */
 
-export const CONCURRENCY_LIMIT = 3;
 export const CACHE_MAX_SIZE = 1000;
 export const CACHE_PERSISTENT_MAX_SIZE = 50000;
 export const CACHE_SAVE_DEBOUNCE = 5000; // ms
-export const QUEUE_TTL = 10000; // ms
 export const GEMINI_BATCH_SIZE = 1000;
 export const DEEPL_BATCH_SIZE = 50;
 export const GEMINI_TEMPERATURE = 0.3;
 export const BATCH_ACCUMULATION_TIME_GEMINI = 200; // ms – debounce interval per new message
-export const BATCH_MAX_WAIT_GEMINI = 12000; // ms – maximum wait time from the first message
-export const GEMINI_RPM_LIMIT = 10; // max Gemini requests per rolling 60-second window
 export const BATCH_ACCUMULATION_TIME_DEEPL = 50; // ms
 
 export const LANGUAGES = [

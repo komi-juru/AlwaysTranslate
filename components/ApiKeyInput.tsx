@@ -8,6 +8,7 @@ import { Button, Forms, TextInput, useState } from "@webpack/common";
 
 import { translateWithDeepL } from "../api/deepl";
 import { translateBatchWithGemini } from "../api/gemini";
+import { nativeRequest } from "../api/nativeRequest";
 import { settings } from "../settings";
 
 function DeeplApiKeyInput({ setValue }: { setValue: (val: string) => void }) {
@@ -35,7 +36,7 @@ function DeeplApiKeyInput({ setValue }: { setValue: (val: string) => void }) {
     };
 
     return (
-        <Forms.FormSection style={{ marginBottom: "20px" }}>
+        <section style={{ marginBottom: "20px" }}>
             <Forms.FormTitle>DeepL API Key</Forms.FormTitle>
             <Forms.FormText>
                 Your DeepL API key (ends with :fx for Free Tier)
@@ -55,7 +56,7 @@ function DeeplApiKeyInput({ setValue }: { setValue: (val: string) => void }) {
                     />
                 </div>
                 <Button
-                    size={Button.Sizes?.ICON ?? "small"}
+                    size={Button.Sizes.SMALL}
                     color={Button.Colors?.PRIMARY ?? "primary"}
                     look={Button.Looks?.FILLED ?? "filled"}
                     onClick={() => setShow(!show)}
@@ -64,7 +65,7 @@ function DeeplApiKeyInput({ setValue }: { setValue: (val: string) => void }) {
                     {show ? "Hide" : "Show"}
                 </Button>
                 <Button
-                    size={Button.Sizes?.ICON ?? "small"}
+                    size={Button.Sizes.SMALL}
                     color={status === "success" ? Button.Colors?.GREEN ?? "green" : (status === "error" ? Button.Colors?.RED ?? "red" : Button.Colors?.BRAND ?? "brand")}
                     look={Button.Looks?.FILLED ?? "filled"}
                     onClick={handleValidate}
@@ -85,7 +86,7 @@ function DeeplApiKeyInput({ setValue }: { setValue: (val: string) => void }) {
                 </div>
             )}
         </div>
-        </Forms.FormSection>
+        </section>
     );
 }
 
@@ -101,7 +102,7 @@ function GeminiApiKeyInput({ setValue }: { setValue: (val: string) => void }) {
         setValidating(true);
         setStatus("idle");
         try {
-            await translateBatchWithGemini("0", [{ id: "0", text: "hello" }], "ko", geminiApiKey, "gemini", "");
+            await translateBatchWithGemini("0", [{ id: "0", text: "hello" }], "ko", geminiApiKey, "", geminiModel);
             setStatus("success");
             setErrorMsg("");
         } catch (e: any) {
@@ -112,7 +113,7 @@ function GeminiApiKeyInput({ setValue }: { setValue: (val: string) => void }) {
     };
 
     return (
-        <Forms.FormSection style={{ marginBottom: "20px" }}>
+        <section style={{ marginBottom: "20px" }}>
             <Forms.FormTitle>Gemini API Key</Forms.FormTitle>
             <Forms.FormText>
                 Your Gemini API Key
@@ -132,7 +133,7 @@ function GeminiApiKeyInput({ setValue }: { setValue: (val: string) => void }) {
                     />
                 </div>
                 <Button
-                    size={Button.Sizes?.ICON ?? "small"}
+                    size={Button.Sizes.SMALL}
                     color={Button.Colors?.PRIMARY ?? "primary"}
                     look={Button.Looks?.FILLED ?? "filled"}
                     onClick={() => setShow(!show)}
@@ -141,7 +142,7 @@ function GeminiApiKeyInput({ setValue }: { setValue: (val: string) => void }) {
                     {show ? "Hide" : "Show"}
                 </Button>
                 <Button
-                    size={Button.Sizes?.ICON ?? "small"}
+                    size={Button.Sizes.SMALL}
                     color={status === "success" ? Button.Colors?.GREEN ?? "green" : (status === "error" ? Button.Colors?.RED ?? "red" : Button.Colors?.BRAND ?? "brand")}
                     look={Button.Looks?.FILLED ?? "filled"}
                     onClick={handleValidate}
@@ -175,7 +176,7 @@ function GeminiApiKeyInput({ setValue }: { setValue: (val: string) => void }) {
                 placeholder="gemini-3.1-flash-lite"
             />
         </div>
-        </Forms.FormSection>
+        </section>
     );
 }
 
@@ -195,11 +196,11 @@ function DeepSeekApiKeyInput({ setValue }: { setValue: (val: string) => void }) 
             const endpoint = deepseekBaseUrl || "https://api.deepseek.com/chat/completions";
             const modelName = deepseekModel || "deepseek-v4-flash";
 
-            const res = await Native.batDeepSeekFetch(endpoint, deepseekApiKey.trim(), JSON.stringify({
+            const res = await nativeRequest(id => Native.batDeepSeekFetch(endpoint, deepseekApiKey.trim(), JSON.stringify({
                 model: modelName,
                 messages: [{ role: "user", content: "hello" }],
                 stream: false
-            }));
+            }), id));
 
             if (!res.ok) {
                 let errorDetails = "Invalid API Key";
@@ -222,7 +223,7 @@ function DeepSeekApiKeyInput({ setValue }: { setValue: (val: string) => void }) 
     };
 
     return (
-        <Forms.FormSection style={{ marginBottom: "20px" }}>
+        <section style={{ marginBottom: "20px" }}>
             <Forms.FormTitle>DeepSeek API Key</Forms.FormTitle>
             <Forms.FormText>
                 Your DeepSeek API Key
@@ -242,7 +243,7 @@ function DeepSeekApiKeyInput({ setValue }: { setValue: (val: string) => void }) 
                     />
                 </div>
                 <Button
-                    size={Button.Sizes?.ICON ?? "small"}
+                    size={Button.Sizes.SMALL}
                     color={Button.Colors?.PRIMARY ?? "primary"}
                     look={Button.Looks?.FILLED ?? "filled"}
                     onClick={() => setShow(!show)}
@@ -251,7 +252,7 @@ function DeepSeekApiKeyInput({ setValue }: { setValue: (val: string) => void }) 
                     {show ? "Hide" : "Show"}
                 </Button>
                 <Button
-                    size={Button.Sizes?.ICON ?? "small"}
+                    size={Button.Sizes.SMALL}
                     color={status === "success" ? Button.Colors?.GREEN ?? "green" : (status === "error" ? Button.Colors?.RED ?? "red" : Button.Colors?.BRAND ?? "brand")}
                     look={Button.Looks?.FILLED ?? "filled"}
                     onClick={handleValidate}
@@ -297,7 +298,7 @@ function DeepSeekApiKeyInput({ setValue }: { setValue: (val: string) => void }) 
                 placeholder="deepseek-v4-flash"
             />
         </div>
-        </Forms.FormSection>
+        </section>
     );
 }
 

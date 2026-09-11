@@ -21,6 +21,9 @@ export class CustomDictionaryStore {
     private saveTimeout: NodeJS.Timeout | null = null;
     private listeners = new Set<() => void>();
     private isDirty = false;
+    private initPromise: Promise<void> | null = null;
+    private cacheSignature = "[]";
+    private savePromise: Promise<void> = Promise.resolve();
 
     private constructor() {}
 
@@ -31,20 +34,18 @@ export class CustomDictionaryStore {
         return this.instance;
     }
 
-    public async init() {
+    public init(): Promise<void> {
+        return this.initPromise ??= this.initialize();
+    }
+
+    private async initialize() {
         await this.loadFromStorage();
         this.runMigration();
         this.notify();
         window.addEventListener("beforeunload", this.handleBeforeUnload);
     }
 
-    private handleBeforeUnload = () => {
-        if (this.isDirty) {
-            // We can't await in beforeunload, but we trigger the IPC call
-            Native.batDictSave(JSON.stringify(this.dict, null, 2));
-            this.isDirty = false;
-        }
-    };
+    private handleBeforeUnload = () => { void this.flush(); };
 
     private async loadFromStorage() {
         try {
@@ -69,31 +70,39 @@ export class CustomDictionaryStore {
                     this.dict[key] = value as string;
                 }
             }
-            settings.store.customDictionary = {};
             this.isDirty = true;
             this.saveToStorage();
         }
     }
 
     private saveToStorage() {
-        if (!this.isDirty) return;
-        if (this.saveTimeout) return;
-        this.saveTimeout = setTimeout(async () => {
+        if (!this.isDirty || this.saveTimeout) return;
+        this.saveTimeout = setTimeout(() => {
+            this.saveTimeout = null;
+            void this.flush();
+        }, 1000);
+    }
+
+    public flush(): Promise<void> {
+        if (this.saveTimeout) clearTimeout(this.saveTimeout);
+        this.saveTimeout = null;
+        this.savePromise = this.savePromise.then(async () => {
+            if (!this.isDirty) return;
+            this.isDirty = false;
             try {
-                if (!this.isDirty) return;
-
-                // Clear dirty flag BEFORE await to avoid swallowing changes that occur during save
-                this.isDirty = false;
-
-                const data = JSON.stringify(this.dict, null, 2);
-                await Native.batDictSave(data);
-            } catch (e: unknown) {
-                this.isDirty = true; // Revert flag on error
-                Logger.warn("Dictionary", "Failed to save dictionary file", e instanceof Error ? e : new Error(String(e)));
-            } finally {
-                this.saveTimeout = null;
+                if (!await Native.batDictSave(JSON.stringify(this.dict, null, 2))) throw new Error("Native dictionary save failed");
+                // Only discard the old settings copy once the file is safely written.
+                settings.store.customDictionary = {};
+            } catch (e) {
+                this.isDirty = true;
+                Logger.warn("Dictionary", "Failed to save dictionary file", e);
             }
-        }, 1000); // 1 second debounce
+        });
+        return this.savePromise;
+    }
+
+    public getCacheSignature(): string {
+        return this.cacheSignature;
     }
 
     public subscribe(callback: () => void) {
@@ -105,6 +114,8 @@ export class CustomDictionaryStore {
     }
 
     private notify() {
+        this.cacheSignature = JSON.stringify(Object.entries(this.dict).sort(([a], [b]) => a.localeCompare(b)));
+        settings.store._cacheVersion = (settings.store._cacheVersion || 0) + 1;
         for (const listener of this.listeners) {
             listener();
         }

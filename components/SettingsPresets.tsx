@@ -6,12 +6,14 @@
 
 import { Button, Forms, Toasts } from "@webpack/common";
 
+import { reScheduleAllWorkers } from "../api/translate";
 import { settings } from "../settings";
 
 export function SettingsPresets() {
     const applyPreset = (name: string, threshold: number, waitMs: number) => {
         settings.store.APIEcoModeThreshold = threshold;
         settings.store.APIMaxBatchWait = waitMs;
+        reScheduleAllWorkers();
 
         Toasts.show({
             message: `Applied ${name} Preset!`,
@@ -21,7 +23,7 @@ export function SettingsPresets() {
     };
 
     return (
-        <Forms.FormSection style={{ marginBottom: "20px" }}>
+        <section style={{ marginBottom: "20px" }}>
             <Forms.FormTitle>Eco Mode Presets</Forms.FormTitle>
             <div style={{ display: "flex", gap: "10px", flexWrap: "wrap" }}>
                 <Button
@@ -49,6 +51,6 @@ export function SettingsPresets() {
                     💤 Sleep
                 </Button>
             </div>
-        </Forms.FormSection>
+        </section>
     );
 }
