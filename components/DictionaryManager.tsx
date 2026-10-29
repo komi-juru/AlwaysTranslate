@@ -31,7 +31,7 @@ export function DictionaryManager() {
         <section style={{ marginTop: 16 }}>
             <Forms.FormTitle>Custom Dictionary ({dictionaryEntries.length})</Forms.FormTitle>
             <Forms.FormText>
-                Force specific words to translate to your exact preferences (e.g., game jargon or names).<br/>Longer words are matched first. CJK strings ignore boundaries.
+                Preferred translations for words and names.
             </Forms.FormText>
 
             <Divider style={{ marginTop: "16px", marginBottom: "16px" }} />

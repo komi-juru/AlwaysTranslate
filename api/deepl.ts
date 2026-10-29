@@ -22,6 +22,7 @@ import { PluginNative } from "@utils/types";
 
 import { Logger } from "../utils/logger";
 // Vencord Native Helper for CORS bypass
+import { httpError } from "./errors";
 import { nativeRequest } from "./nativeRequest";
 
 const Native = VencordNative.pluginHelpers.AlwaysTranslate as PluginNative<typeof import("../native")>;
@@ -45,24 +46,7 @@ export async function translateWithDeepL(
     });
 
     const res = await nativeRequest(id => Native.batDeeplFetch(isFree, apiKey.trim(), payload, id), signal);
-    if (!res.ok) {
-        const raw = String(res.data || "");
-        const lower = raw.toLowerCase();
-
-        if (res.status === 401 || res.status === 403 || lower.includes("invalid auth") || lower.includes("authorization")) {
-            throw new Error("DeepL API key is invalid.");
-        }
-
-        if (res.status === 429 || lower.includes("too many requests") || lower.includes("rate limit")) {
-            throw new Error("DeepL rate limit exceeded.");
-        }
-
-        if (res.status === 456 || lower.includes("quota")) {
-            throw new Error("DeepL quota exceeded.");
-        }
-
-        throw new Error(`DeepL request failed (${res.status}): ${raw}`);
-    }
+    if (!res.ok) throw httpError(res.status, String(res.data));
 
     try {
         const data = JSON.parse(res.data);
@@ -79,16 +63,9 @@ export async function getDeepLUsage(apiKey: string): Promise<{ count: number, li
 
     try {
         const res = await Native.batDeeplUsageFetch(isFree, apiKey.trim());
-        if (!res.ok) {
-            Logger.error("DeepL", `Usage fetch failed: ${res.status}`, res.data);
-            return null;
-        }
-
+        if (!res.ok) throw httpError(res.status, String(res.data));
         const data = JSON.parse(res.data);
-        return {
-            count: data.character_count,
-            limit: isFree ? 500000 : data.character_limit
-        };
+        return { count: data.character_count, limit: isFree ? 500000 : data.character_limit };
     } catch (e) {
         Logger.error("DeepL", "Failed to parse usage", e);
         return null;

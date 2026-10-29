@@ -14,13 +14,13 @@ import {
     settings,
     updateChannel,
 } from "../settings";
-import { TranslationCache } from "../utils/cache";
 
 export interface PartialChannel {
     id: string;
     lang?: string;
     engine?: string;
     aiCustomPrompt?: string;
+    outgoingCustomPrompt?: string;
 }
 
 export function ChannelManager() {
@@ -28,7 +28,6 @@ export function ChannelManager() {
     const [selectedChannel, setSelectedChannel] = useState<string | undefined>();
     const [showIdInput, setShowIdInput] = useState(false);
     const [expandedChannels, setExpandedChannels] = useState<string[]>([]);
-    const [cacheTick, setCacheTick] = useState(0);
     const { channelList: channels = [], translationMode = "global", translationEngine = "gemini" } = settings.use(["channelList", "translationMode", "translationEngine"]);
 
     const activeChannels = [...channels];
@@ -169,10 +168,10 @@ export function ChannelManager() {
             </Forms.FormTitle>
             <Forms.FormText>
                 {translationMode === "global"
-                    ? "Other channels use the default engine. Add a channel here to change its engine or language, or turn off automatic translation there."
-                    : "Automatic translation runs only in the channels listed here, using each channel's engine setting."}
+                    ? "Set an engine, language and prompts per channel."
+                    : "Only listed channels are translated automatically."}
                 <br />
-                Channel language means the other person's language: incoming messages are translated into your reading language; outgoing messages are translated into the channel language. Auto detects incoming text only.
+                Channel language: their language. Auto detects incoming text only.
             </Forms.FormText>
 
             <Divider style={{ marginTop: "16px", marginBottom: "16px" }} />
@@ -195,12 +194,10 @@ export function ChannelManager() {
                         </div>
                     </div>
 
-                    <button type="button" className="bat-settings-text-button" aria-expanded={showIdInput}
-                        style={{ cursor: "pointer", color: "var(--text-muted)", fontSize: "13px", display: "inline-flex", alignItems: "center", gap: "4px", width: "fit-content", userSelect: "none" }}
-                        onClick={() => setShowIdInput(!showIdInput)}
-                    >
-                        {showIdInput ? "▼" : "▶"} Add by channel ID
-                    </button>
+                    <Button size={Button.Sizes.SMALL} color={Button.Colors.PRIMARY}
+                        look={Button.Looks.FILLED} onClick={() => setShowIdInput(!showIdInput)}>
+                        {showIdInput ? "Close channel ID" : "Add by channel ID"}
+                    </Button>
 
                     {showIdInput && (
                         <div style={{ display: "flex", gap: "8px", alignItems: "center", flexWrap: "wrap" }}>
@@ -225,27 +222,12 @@ export function ChannelManager() {
 
             <Divider style={{ marginTop: "16px", marginBottom: "16px" }} />
 
-            <div style={{ marginBottom: "16px", background: "var(--background-secondary-alt)", padding: "12px", borderRadius: "8px", borderLeft: "4px solid var(--text-brand)" }}>
-                <div style={{ fontWeight: 600, color: "var(--header-primary)", marginBottom: "4px" }}>
-                    Translation Scope: <span style={{ color: "var(--text-brand)" }}>
-                        {translationMode === "global" ? "All channels" : `Selected channels (${activeChannels.length})`}
-                    </span>
-                </div>
-                <div style={{ fontSize: "13px", color: "var(--text-muted)" }}>
-                    {translationMode === "global"
-                        ? `Default automatic engine: ${translationEngine === "disable" ? "Off" : GLOBAL_ENGINE_OPTIONS.find(o => o.value === translationEngine)?.label || translationEngine}. Channel settings below take priority.`
-                        : (activeChannels.length === 0
-                            ? "No channels selected. Automatic translation is off until you add a channel. The manual button is separate."
-                            : "Automatic translation is restricted to the selected channels below. The manual button is separate.")}
-                </div>
-            </div>
-
             <div>
                 {activeChannels.length === 0 ? (
                     <Forms.FormText>
                         {translationMode === "global"
-                            ? "No channel-specific settings. All channels follow your default automatic engine."
-                            : "No channels added. Add a channel to translate it."}
+                            ? "No channel overrides."
+                            : "No channels added."}
                     </Forms.FormText>
                 ) : (
                     <div style={{ display: "flex", flexDirection: "column", gap: "24px", marginTop: "8px" }}>
@@ -254,9 +236,9 @@ export function ChannelManager() {
                                 <div style={{ fontWeight: 600, color: "var(--header-primary)", fontSize: "16px", paddingBottom: "4px", borderBottom: "1px solid var(--background-modifier-accent)" }}>
                                     {guildName}
                                 </div>
-                                <div style={{ display: "flex", flexDirection: "column", gap: "8px", paddingLeft: "12px", borderLeft: "2px solid var(--background-modifier-accent)" }}>
+                                <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
                                     {channels.map((ch: PartialChannel) => (
-                                        <div key={ch.id} style={{ display: "flex", flexDirection: "column", gap: "8px", background: "var(--background-secondary)", padding: "12px", borderRadius: "8px" }}>
+                                        <div key={ch.id} style={{ display: "flex", flexDirection: "column", gap: "8px", padding: "12px 0", borderBottom: "1px solid var(--background-modifier-accent)" }}>
                                             <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", justifyContent: "space-between", gap: "12px" }}>
                                     <div style={{ flex: "1 1 auto", minWidth: 0, marginRight: "16px" }}>
                                         <div style={{ fontWeight: 600, color: "var(--text-normal)", marginBottom: "2px", padding: "2px 0", lineHeight: "1.3", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
@@ -267,10 +249,10 @@ export function ChannelManager() {
                                         </div>
                                     </div>
 
-                                    <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: "12px", flex: "1 1 100%" }}>
+                                    <div className="bat-channel-controls">
                                         {(
                                             <>
-                                                <div style={{ width: "160px", flexShrink: 0 }}>
+                                                <div style={{ minWidth: 0 }}>
                                                     <div className="bat-settings-field-label">Automatic engine</div>
                                                     <SearchableSelect
                                                         value={ch.engine ?? "default"}
@@ -283,7 +265,7 @@ export function ChannelManager() {
                                                     />
                                                 </div>
 
-                                                <div style={{ width: "160px", flexShrink: 0 }}>
+                                                <div style={{ minWidth: 0 }}>
                                                     <div className="bat-settings-field-label">Channel language</div>
                                                     <SearchableSelect
                                                         value={ch.lang}
@@ -296,30 +278,10 @@ export function ChannelManager() {
                                             </>
                                         )}
 
-                                        <div style={{ display: "flex", flexWrap: "wrap", gap: "8px" }}>
-                                            <button type="button" className="bat-settings-text-button" aria-expanded={expandedChannels.includes(ch.id)} onClick={() => setExpandedChannels(ids => ids.includes(ch.id) ? ids.filter(id => id !== ch.id) : [...ids, ch.id])}>
-                                                {expandedChannels.includes(ch.id) ? "Hide details" : "More settings"}
-                                            </button>
-                                            {expandedChannels.includes(ch.id) && (
-                                                <Button
-                                                    color={Button.Colors.PRIMARY}
-                                                    look={Button.Looks.FILLED}
-                                                    size={Button.Sizes.SMALL}
-                                                    style={{ minWidth: "140px" }}
-                                                    onClick={() => {
-                                                        TranslationCache.getInstance().clearChannel(ch.id);
-                                                        settings.store._cacheVersion = (settings.store._cacheVersion || 0) + 1;
-                                                        setCacheTick(t => t + 1);
-                                                        Toasts.show({
-                                                            message: "Channel cache cleared.",
-                                                            type: Toasts.Type.SUCCESS,
-                                                            id: Toasts.genId()
-                                                        });
-                                                    }}
-                                                >
-                                                    Clear Cache ({TranslationCache.getInstance().getChannelCount(ch.id)})
-                                                </Button>
-                                            )}
+                                        <div style={{ display: "contents" }}>
+                                            <Button size={Button.Sizes.SMALL} color={Button.Colors.PRIMARY} look={Button.Looks.FILLED} onClick={() => setExpandedChannels(ids => ids.includes(ch.id) ? ids.filter(id => id !== ch.id) : [...ids, ch.id])}>
+                                                {expandedChannels.includes(ch.id) ? "Close prompts" : "Edit prompts"}
+                                            </Button>
                                             <Button
                                                 color={Button.Colors.RED}
                                                 look={Button.Looks.FILLED}
@@ -332,15 +294,24 @@ export function ChannelManager() {
                                     </div>
                                 </div>
 
-                                            {expandedChannels.includes(ch.id) && ((ch.engine && (ch.engine.startsWith("gemini") || ch.engine.startsWith("deepseek"))) || ((!ch.engine || ch.engine === "default") && (translationEngine.startsWith("gemini") || translationEngine.startsWith("deepseek")))) && (
+                                            {expandedChannels.includes(ch.id) && (
                                                 <div style={{ marginTop: "8px" }}>
                                                     <div style={{ fontSize: "12px", fontWeight: 600, color: "var(--text-muted)", marginBottom: "4px" }}>
-                                                        Custom Prompt / Instruction (Optional)
+                                                        Incoming prompt
                                                     </div>
                                                     <TextInput
                                                         value={ch.aiCustomPrompt ?? ""}
                                                         onChange={(val: string) => updateChannel(ch.id, { aiCustomPrompt: val || undefined })}
-                                                        placeholder="e.g. Translate keeping the casual tone and use emojis..."
+                                                        placeholder="e.g. Keep the original tone."
+                                                        style={{ width: "100%" }}
+                                                    />
+                                                    <div style={{ fontSize: "12px", fontWeight: 600, color: "var(--text-muted)", marginTop: "12px", marginBottom: "4px" }}>
+                                                        Outgoing prompt
+                                                    </div>
+                                                    <TextInput
+                                                        value={ch.outgoingCustomPrompt ?? ""}
+                                                        onChange={(val: string) => updateChannel(ch.id, { outgoingCustomPrompt: val || undefined })}
+                                                        placeholder="e.g. Use a friendly tone."
                                                         style={{ width: "100%" }}
                                                     />
                                                 </div>

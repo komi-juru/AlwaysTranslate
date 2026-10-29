@@ -16,6 +16,7 @@ export interface ChannelConfig {
     lang: string;
     engine?: string;
     aiCustomPrompt?: string;
+    outgoingCustomPrompt?: string;
 }
 
 export type GeminiQuotaKind = "rpm" | "tpm" | "rpd";
@@ -44,7 +45,7 @@ export const settings = definePluginSettings({
         type: OptionType.SELECT,
         default: "auto",
         displayName: "My reading language",
-        description: "Incoming messages are translated into this language. Discord language follows your client language.",
+        description: "Language for received messages.",
         options: LANGUAGES.map(l => l.value === "auto" ? { ...l, label: "Discord language", default: true } : l),
     },
 
@@ -52,7 +53,7 @@ export const settings = definePluginSettings({
         type: OptionType.SELECT,
         default: "global",
         displayName: "Automatic translation scope",
-        description: "Choose where automatic translation runs. Set channel-specific languages and engines below.",
+        description: "Channels to translate automatically.",
         options: [
             { label: "All channels", value: "global", default: true },
             { label: "Selected channels only", value: "whitelist" }
@@ -62,14 +63,14 @@ export const settings = definePluginSettings({
         type: OptionType.SELECT,
         default: "gemini",
         displayName: "Default automatic engine",
-        description: "Off disables default automatic translation. Channel overrides and the manual button can still translate.",
+        description: "Default engine. Channel overrides apply separately.",
         options: GLOBAL_ENGINE_OPTIONS.map(o => ({ ...o, label: o.value === "disable" ? "Off" : o.label, default: o.value === "gemini" })),
     },
     manualTranslationEngine: {
         type: OptionType.SELECT,
         default: "gemini",
         displayName: "Manual button engine",
-        description: "Engine used by Translate Now in the chat bar. This works independently of the default automatic engine.",
+        description: "Engine for the Translate Now button.",
         options: GLOBAL_ENGINE_OPTIONS.map(o => ({ ...o, label: o.value === "disable" ? "Off" : o.label, default: o.value === "gemini" })),
     },
     deeplApiKey: {
@@ -136,7 +137,7 @@ export const settings = definePluginSettings({
         type: OptionType.BOOLEAN,
         default: false,
         displayName: "Translate outgoing messages",
-        description: "Translate before sending. Set the other person's language in channel settings. Auto does not detect their language for outgoing messages.",
+        description: "Translate before sending. Set a channel language first.",
     },
     previewOutgoing: {
         type: OptionType.BOOLEAN,

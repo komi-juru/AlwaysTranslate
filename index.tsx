@@ -7,6 +7,7 @@
 import "./styles.css";
 
 import { addMessageAccessory, removeMessageAccessory } from "@api/MessageAccessories";
+import { Divider } from "@components/Divider";
 import definePlugin from "@utils/types";
 import { ComponentDispatch, Forms } from "@webpack/common";
 
@@ -27,19 +28,20 @@ import { TranslationCache } from "./utils/cache";
 
 
 const SettingsHeader = ({ title }: { title: string }) => (
-    <div style={{ marginTop: "24px", marginBottom: "8px", borderBottom: "1px solid var(--background-modifier-accent)", paddingBottom: "4px" }}>
-        <Forms.FormTitle tag="h2" style={{ margin: 0, fontSize: "16px", color: "var(--header-primary)" }}>{title}</Forms.FormTitle>
-    </div>
+    <>
+        <Divider style={{ marginTop: 24, marginBottom: 16 }} />
+        <Forms.FormTitle tag="h2">{title}</Forms.FormTitle>
+    </>
 );
 
 // Wire up dynamic COMPONENT settings (avoids circular imports)
 settings.def.ui_githubLink.component = GithubLinkInjector;
 settings.def.ui_overview.component = SettingsOverview;
-settings.def.header_translation.component = () => <SettingsHeader title="⚙️ Translation Setup" />;
-settings.def.header_dictionary.component = () => <SettingsHeader title="📖 Custom Dictionary" />;
+settings.def.header_translation.component = () => <SettingsHeader title="Translation" />;
+settings.def.header_dictionary.component = () => <SettingsHeader title="Dictionary" />;
 settings.def.dictionaryManager.component = DictionaryManager;
 settings.def.header_management.component = () => <SettingsHeader title="Channels & Outgoing Messages" />;
-settings.def.header_design.component = () => <SettingsHeader title="🎨 UI & Design" />;
+settings.def.header_design.component = () => <SettingsHeader title="Appearance" />;
 settings.def.channelManager.component = ChannelManager;
 settings.def.ui_apiKeys.component = ApiKeysManager;
 
@@ -153,6 +155,7 @@ export default definePlugin({
 
         let currentEngine = config?.engine ?? translationEngine;
         if (currentEngine === "default") currentEngine = translationEngine;
+        const customPrompt = config?.outgoingCustomPrompt?.trim() || "";
 
 
 
@@ -169,7 +172,10 @@ export default definePlugin({
                 targetLang,
                 currentEngine,
                 { deepl: deeplApiKey, gemini: geminiApiKey, deepseek: deepseekApiKey },
-                channelId
+                channelId,
+                undefined,
+                false,
+                customPrompt
             );
 
             if (result) {

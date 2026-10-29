@@ -7,7 +7,7 @@
 import { Toasts } from "@webpack/common";
 
 import { type GeminiQuotaKind, type GeminiQuotaLockState,settings } from "../settings";
-import { Logger } from "../utils/logger";
+import { describeApiError } from "./errors";
 
 const recentToasts = new Map<string, number>();
 const TOAST_DEDUP_WINDOW_MS = 1500;
@@ -193,53 +193,7 @@ export const APIBreaker = {
         errorCode: string | null,
         errorMsg: string
     ): boolean {
-        const lowerMsg = (errorMsg || "").toLowerCase();
-
-        const statusMatch = lowerMsg.match(/api error:?\s*(\d+)/i) || lowerMsg.match(/status\s*(\d+)/i);
-        const resolvedStatus = status || (statusMatch ? parseInt(statusMatch[1], 10) : null);
-
-        if (
-            resolvedStatus === 401 ||
-            resolvedStatus === 403 ||
-            errorCode === "API_KEY_INVALID" ||
-            lowerMsg.includes("invalid api key") ||
-            lowerMsg.includes("missing")
-        ) {
-            Logger.warn("CircuitBreaker", `[${engine}] Invalid API Key.`);
-            showApiToast(engine, "Invalid key");
-            return true;
-        }
-
-        if (
-            resolvedStatus === 456 ||
-            lowerMsg.includes("daily") ||
-            lowerMsg.includes("per day") ||
-            lowerMsg.includes("quota exceeded")
-        ) {
-            if (!lowerMsg.includes("per minute") && !lowerMsg.includes("minute") && !lowerMsg.includes("rpm") && !lowerMsg.includes("tpm")) {
-                const reason = "Quota exceeded";
-                Logger.warn("CircuitBreaker", `[${engine}] ${reason}.`);
-                showApiToast(engine, reason);
-                return true;
-            }
-        }
-
-        if (
-            resolvedStatus === 429 ||
-            lowerMsg.includes("429") ||
-            lowerMsg.includes("too many requests") ||
-            lowerMsg.includes("per minute") ||
-            lowerMsg.includes("minute") ||
-            lowerMsg.includes("rpm") ||
-            lowerMsg.includes("tpm") ||
-            errorCode === "RESOURCE_EXHAUSTED" ||
-            lowerMsg.includes("resource_exhausted")
-        ) {
-            Logger.warn("CircuitBreaker", `[${engine}] Rate limit exceeded.`);
-            showApiToast(engine, "Rate limited");
-            return true;
-        }
-
-        return false;
+        showApiToast(engine, describeApiError(status, errorCode, errorMsg));
+        return true;
     }
 };

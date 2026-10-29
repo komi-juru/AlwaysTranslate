@@ -29,7 +29,8 @@ export async function translate(
     engine: string,
     apiKeys: { deepl: string, gemini: string, deepseek: string },
     isManual = false,
-    dictMatches: Record<string, string> = {}
+    dictMatches: Record<string, string> = {},
+    customPrompt?: string
 ): Promise<string> {
     if (engine?.startsWith("gemini") || engine?.startsWith("deepseek")) {
         const isDeepSeek = engine.startsWith("deepseek");
@@ -45,7 +46,7 @@ export async function translate(
 
         const result = await new Promise<string>(resolve => {
             const { config } = getChannelConfig(channelId);
-            const dmPrompt = config?.aiCustomPrompt || "";
+            const dmPrompt = customPrompt ?? config?.aiCustomPrompt ?? "";
 
             if (!geminiWorkers.has(channelId)) {
                 geminiWorkers.set(channelId, new GeminiChannelWorker(channelId));
@@ -219,7 +220,8 @@ export async function safeTranslate(
     apiKeys: { deepl: string, gemini: string, deepseek: string },
     channelId?: string,
     messageId?: string,
-    isManual = false
+    isManual = false,
+    customPrompt?: string
 ): Promise<string | null> {
     if (!shouldTranslate(content, targetLang)) return null;
 
@@ -244,7 +246,8 @@ export async function safeTranslate(
         engine,
         apiKeys,
         isManual,
-        matches
+        matches,
+        customPrompt
     );
 
     if (!result || result === textToTranslate) return null;

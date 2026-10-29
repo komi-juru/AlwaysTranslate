@@ -85,7 +85,7 @@ export function TranslateHeaderButton() {
             <Menu.Menu navId="bat-translate-menu" onClose={() => setShow(false)} aria-label="AlwaysTranslate settings">
                 <Menu.MenuGroup label="This channel">
                     <Menu.MenuItem id="auto-engine-select" label={`Automatic translation: ${isActive ? engineLabel(effectiveEngine) : "Off"}`}
-                        subtext={!isChannelListed && translationMode !== "global" ? "Choose an engine to enable this channel." : "Off keeps the channel language and custom prompt."}>
+                        subtext={!isChannelListed && translationMode !== "global" ? "Select an engine to enable." : "Off preserves channel settings."}>
                         {CHANNEL_ENGINE_OPTIONS.map(opt => (
                             <Menu.MenuRadioItem key={opt.value} id={`engine-${opt.value}`} group="bat-auto-engine"
                                 label={opt.value === "default" ? `Follow default (${engineLabel(translationEngine)})` : engineLabel(opt.value)}
@@ -98,7 +98,7 @@ export function TranslateHeaderButton() {
                         ))}
                     </Menu.MenuItem>
                     <Menu.MenuItem id="lang-select" label={`Channel language: ${LANGUAGES.find(l => l.value === currentLanguage)?.label ?? currentLanguage}`}
-                        subtext="Incoming source and outgoing target. Auto Detect applies to incoming messages only.">
+                        subtext="Their language. Auto: incoming only.">
                         {LANGUAGES.map(lang => (
                             <Menu.MenuRadioItem key={lang.value} id={`lang-${lang.value}`} group="bat-channel-language"
                                 label={lang.label} checked={currentLanguage === lang.value} dontCloseOnActionIf={() => true}
@@ -123,7 +123,7 @@ export function TranslateHeaderButton() {
                         ))}
                     </Menu.MenuItem>
                     <Menu.MenuItem id="eco-preset-select" label={`Batch timing: ${selectedPreset?.name ?? "Custom"}`}
-                        subtext="Applies to Gemini and DeepSeek across all channels.">
+                        subtext="Gemini and DeepSeek · All channels">
                         {presets.map(preset => (
                             <Menu.MenuRadioItem key={preset.name} id={`preset-${preset.name.toLowerCase()}`} group="bat-batch-preset"
                                 label={preset.name} subtext={`${preset.threshold} messages / ${preset.wait ? `up to ${preset.wait}s` : "no timer"}`}

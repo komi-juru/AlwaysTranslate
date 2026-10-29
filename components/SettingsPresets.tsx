@@ -4,14 +4,16 @@
  * SPDX-License-Identifier: GPL-3.0-or-later
  */
 
+import { Forms, SearchableSelect, TextInput } from "@webpack/common";
+
 import { reScheduleAllWorkers } from "../api/translate";
 import { settings } from "../settings";
 
 const presets = [
-    { name: "Real-time", threshold: 1, wait: 0, description: "Translate as messages arrive." },
-    { name: "Balanced", threshold: 3, wait: 10, description: "3 messages or 10 seconds." },
-    { name: "Economy", threshold: 10, wait: 30, description: "10 messages or 30 seconds." },
-    { name: "Sleep", threshold: 250, wait: 0, description: "Wait for 250 messages. No time limit." }
+    { name: "Real-time", threshold: 1, wait: 0 },
+    { name: "Balanced", threshold: 3, wait: 10 },
+    { name: "Economy", threshold: 10, wait: 30 },
+    { name: "Sleep", threshold: 250, wait: 0 }
 ];
 
 export function SettingsPresets() {
@@ -24,34 +26,36 @@ export function SettingsPresets() {
     };
 
     return (
-        <section className="bat-settings-section" aria-label="Eco mode">
-            <h3>Translation timing <span className="bat-settings-badge">{current?.name || "Custom"}</span></h3>
-            <p className="bat-settings-description">Group messages to reduce Gemini and DeepSeek requests. DeepL uses its own batching. Translate Now sends queued messages immediately.</p>
-            <div className="bat-settings-presets">
-                {presets.map(p => (
-                    <button type="button" key={p.name} className="bat-settings-preset" aria-pressed={current === p} onClick={() => update(p.threshold, p.wait)}>
-                        <strong>{p.name}</strong><span>{p.description}</span>
-                    </button>
-                ))}
+        <section className="bat-settings-section">
+            <Forms.FormTitle>Translation timing</Forms.FormTitle>
+            <Forms.FormText>Gemini and DeepSeek batching.</Forms.FormText>
+            <div style={{ marginTop: 8 }}>
+                <SearchableSelect
+                    value={current?.name ?? "Custom"}
+                    options={[...presets.map(p => ({ label: p.name, value: p.name })), { label: "Custom", value: "Custom" }]}
+                    onChange={(value: string) => {
+                        const preset = presets.find(p => p.name === value);
+                        if (preset) update(preset.threshold, preset.wait);
+                    }}
+                />
             </div>
-            <details className="bat-settings-details">
-                <summary>Custom timing · {threshold} messages / {wait === 0 ? "no time limit" : `${wait}s`}</summary>
-                <div className="bat-settings-fields">
-                    <label>Message threshold
-                        <input type="number" min={1} max={1000} step={1} value={threshold} onChange={e => {
-                            const value = e.currentTarget.valueAsNumber;
-                            if (Number.isInteger(value) && value >= 1 && value <= 1000) update(value, wait);
-                        }} />
-                    </label>
-                    <label>Maximum wait (seconds)
-                        <input type="number" min={0} max={300} step={1} value={wait} onChange={e => {
-                            const value = e.currentTarget.valueAsNumber;
-                            if (Number.isInteger(value) && value >= 0 && value <= 300) update(threshold, value);
-                        }} />
-                    </label>
+            <div className="bat-settings-fields">
+                <div>
+                    <Forms.FormTitle>Messages</Forms.FormTitle>
+                    <TextInput type="number" value={String(threshold)} onChange={(value: string) => {
+                        const count = Number(value);
+                        if (value && Number.isInteger(count) && count >= 1 && count <= 1000) update(count, wait);
+                    }} />
                 </div>
-                <p className="bat-settings-description">0 seconds means no time limit. Translation starts when the message threshold is reached or you use Translate Now.</p>
-            </details>
+                <div>
+                    <Forms.FormTitle>Wait (seconds)</Forms.FormTitle>
+                    <TextInput type="number" value={String(wait)} onChange={(value: string) => {
+                        const seconds = Number(value);
+                        if (value && Number.isInteger(seconds) && seconds >= 0 && seconds <= 300) update(threshold, seconds);
+                    }} />
+                </div>
+            </div>
+            <Forms.FormText>0 seconds: wait for the message count.</Forms.FormText>
         </section>
     );
 }

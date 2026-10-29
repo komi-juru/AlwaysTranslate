@@ -14,12 +14,12 @@ async function translationFetch(event: IpcMainInvokeEvent, requestId: string, ur
     const key = event.sender.id + ":" + requestId;
     const controller = new AbortController();
     requests.set(key, controller);
-    const timer = setTimeout(() => controller.abort(), timeout);
+    const timer = setTimeout(() => controller.abort(), Math.min(timeout, 10_000));
     try {
         const res = await fetch(url, { ...init, signal: controller.signal });
         return { ok: res.ok, status: res.status, data: await res.text() };
     } catch (e) {
-        return { ok: false, status: -1, data: String(e) };
+        return { ok: false, status: -1, data: controller.signal.aborted ? "Translation timed out or cancelled" : "Network connection failed" };
     } finally {
         clearTimeout(timer);
         requests.delete(key);

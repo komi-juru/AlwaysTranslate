@@ -9,6 +9,7 @@ import { PluginNative } from "@utils/types";
 import { GEMINI_TEMPERATURE } from "../constants";
 import { type GeminiQuotaKind, settings } from "../settings";
 import { Logger } from "../utils/logger";
+import { httpError } from "./errors";
 import { buildBatchTranslationPrompt, buildBatchUserPromptContext } from "./geminiPrompt";
 import { nativeRequest } from "./nativeRequest";
 
@@ -25,31 +26,6 @@ const getApiUrl = (modelName?: string) => {
     return `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`;
 };
 
-function simplifyGeminiError(status: number, rawText: string): string {
-    const lower = rawText.toLowerCase();
-
-    if (status === 401 || status === 403 || lower.includes("invalid api key") || lower.includes("missing")) {
-        return "Gemini API key is invalid.";
-    }
-
-    if (status === 429 || lower.includes("resource_exhausted") || lower.includes("quota exceeded") || lower.includes("too many requests")) {
-        return "Gemini quota exceeded.";
-    }
-
-    if (lower.includes("safety filters") || lower.includes("blocked by safety")) {
-        return "Gemini blocked the response for safety reasons.";
-    }
-
-    if (lower.includes("network request failed") || lower.includes("fetch failed")) {
-        return "Gemini network request failed.";
-    }
-
-    if (lower.includes("invalid response format")) {
-        return "Gemini returned an invalid response.";
-    }
-
-    return `Gemini request failed (${status}).`;
-}
 
 function classifyGeminiQuota(rawText: string, errData: any): GeminiQuotaKind | null {
     const parts: string[] = [];
@@ -106,7 +82,7 @@ async function fetchGeminiAPI(payload: any, engine: string, apiKey: string, sign
         res = await nativeRequest(id => Native.batGeminiFetch(apiUrl, apiKey, JSON.stringify(payload), id), signal);
     } catch (e) {
         Logger.warn("Gemini", "Network error during fetch", e);
-        throw new Error("Gemini API network request failed");
+        throw e;
     }
 
     if (!res.ok) {
@@ -147,7 +123,7 @@ async function fetchGeminiAPI(payload: any, engine: string, apiKey: string, sign
             throw err;
         }
 
-        throw new Error(simplifyGeminiError(res.status, String(res.data)));
+        throw httpError(res.status, String(res.data));
     }
 
     try {
@@ -156,13 +132,13 @@ async function fetchGeminiAPI(payload: any, engine: string, apiKey: string, sign
 
         if (!text) {
             Logger.warn("Gemini", "Safety filter triggered or empty response", data);
-            throw new Error("Response was blocked by safety filters or missing content");
+            throw new Error(data?.promptFeedback?.blockReason || ["SAFETY", "PROHIBITED_CONTENT", "BLOCKLIST"].includes(data?.candidates?.[0]?.finishReason) ? "Response blocked by safety filters" : "Empty response from Gemini API");
         }
 
         return text.trim();
     } catch (e: any) {
         if (e.message?.includes("Quota Exceeded")) throw e;
-        if (e.message?.includes("safety filters")) throw e;
+        if (e.message?.includes("safety filters") || e.message?.includes("Empty response")) throw e;
         Logger.warn("Gemini", "Failed to parse API response", e);
         throw new Error(`Gemini returned an invalid response: ${e.message}`);
     }

@@ -8,6 +8,62 @@ const root = path.resolve(__dirname, "..");
 const tick = () => new Promise(resolve => setImmediate(resolve));
 const deferred = () => { let resolve; const promise = new Promise(r => { resolve = r; }); return { promise, resolve }; };
 
+test("API errors distinguish credentials, permissions, balance, quota, service and malformed responses", () => {
+    const { describeApiError, httpError } = environment().load("api/errors.ts");
+    assert.match(describeApiError(403, null, "Permission denied"), /Access denied/);
+    assert.match(describeApiError(400, "API_KEY_INVALID", "Bad key"), /Invalid API key/);
+    assert.match(describeApiError(402, null, ""), /balance/);
+    assert.match(describeApiError(404, null, ""), /Model or API endpoint/);
+    assert.match(describeApiError(429, null, ""), /rate limit/);
+    assert.match(describeApiError(456, null, ""), /quota/);
+    assert.match(describeApiError(503, null, ""), /server/);
+    assert.match(describeApiError(-1, null, "fetch failed"), /Network/);
+    assert.match(describeApiError(null, null, "missing content"), /no translation/);
+    assert.match(describeApiError(null, null, "Failed to parse JSON"), /Invalid API response/);
+    assert.match(describeApiError(null, null, "Translation timed out (10s)"), /timed out/);
+    const error = httpError(403, '{"error":{"message":"Forbidden"}}');
+    assert.equal(error.status, 403); assert.match(error.message, /Access denied/);
+});
+
+test("queued AI work expires after 10 seconds even in indefinite economy mode", async t => {
+    t.mock.timers.enable({ apis: ["setTimeout"] });
+    const e = environment(); let calls = 0;
+    e.mocks["api/gemini.ts"].translateBatchWithGemini = async () => { calls++; return []; };
+    const { GeminiChannelWorker, geminiWorkers } = e.load("api/worker.ts");
+    const worker = new GeminiChannelWorker("123"); geminiWorkers.set("123", worker);
+    const job = task("deadline"); worker.enqueue(job);
+    t.mock.timers.tick(9999); assert.equal(worker.registry.size, 1);
+    t.mock.timers.tick(1); assert.equal(await job.result, "");
+    assert.equal(worker.registry.size, 0); assert.equal(geminiWorkers.size, 0); assert.equal(calls, 0);
+});
+
+test("hung AI and DeepL requests abort at the task deadline and ignore late completion", async t => {
+    t.mock.timers.enable({ apis: ["setTimeout"] });
+    for (const engine of ["gemini", "deepl"]) {
+        const e = environment(); const pending = deferred(); let signal;
+        if (engine === "gemini") e.mocks["api/gemini.ts"].translateBatchWithGemini = (...args) => { signal = args[6]; return pending.promise; };
+        else e.mocks["api/deepl.ts"].translateWithDeepL = (...args) => { signal = args[4]; return pending.promise; };
+        const workers = e.load("api/worker.ts");
+        const worker = engine === "gemini" ? new workers.GeminiChannelWorker("123") : new workers.DeeplChannelWorker("deepl|||auto|||ko|||key");
+        const job = task(engine); worker.enqueue(job); worker.flushNow(); await tick();
+        t.mock.timers.tick(10000); assert.equal(await job.result, ""); assert.ok(signal.aborted);
+        pending.resolve(engine === "gemini" ? [{ id: engine, text: "late" }] : ["late"]);
+        await tick(); assert.equal(worker.registry.size, 0); assert.equal(worker.state, "IDLE");
+    }
+});
+
+test("native IPC hangs are bounded and cancellation is forwarded", async t => {
+    t.mock.timers.enable({ apis: ["setTimeout"] });
+    const e = environment(); const cancelled = [];
+    e.native.batCancelRequest = async id => cancelled.push(id);
+    const { nativeRequest } = e.load("api/nativeRequest.ts");
+    let id;
+    const promise = nativeRequest(requestId => { id = requestId; return new Promise(() => {}); });
+    const rejection = assert.rejects(promise, /timed out/);
+    t.mock.timers.tick(10000); await rejection;
+    assert.deepEqual(cancelled, [id]);
+});
+
 function environment(extra = {}) {
     const store = { APIEcoModeThreshold: 100, APIMaxBatchWait: 0, customDictionary: {}, geminiModel: "gemini-a", deepseekModel: "deepseek-a", deepseekBaseUrl: "https://example.test", channelList: [], ...extra };
     const native = { batCacheLoad: async () => null, batCacheSave: async () => true, batDictLoad: async () => null, batDictSave: async () => true };
@@ -176,6 +232,24 @@ test("queued requests retain their model and complete custom prompt after settin
     e.store.geminiModel = "changed-model";
     e.load("api/worker.ts").geminiWorkers.get("123").flushNow();
     assert.equal(await result, "result"); assert.equal(received[4], "formal|||keep names"); assert.equal(received[5], "gemini-a");
+});
+
+test("incoming and outgoing prompts stay separate across channels, including blank outgoing prompts", async () => {
+    const e = environment({ channelList: [
+        { id: "123", aiCustomPrompt: "incoming A", outgoingCustomPrompt: "outgoing A" },
+        { id: "456", aiCustomPrompt: "incoming B", outgoingCustomPrompt: "" }
+    ] });
+    const received = [];
+    e.mocks["api/gemini.ts"].translateBatchWithGemini = async (...args) => {
+        received.push(args[4]);
+        return args[1].map(m => ({ id: m.id, text: "result" }));
+    };
+    const { translate } = e.load("api/translate.ts");
+    for (const channel of e.store.channelList) {
+        await translate(channel.id, "", "hello", "auto", "ko", "gemini", { gemini: "key", deepl: "", deepseek: "" });
+        await translate(channel.id, "", "hello", "auto", "en", "gemini", { gemini: "key", deepl: "", deepseek: "" }, false, {}, channel.outgoingCustomPrompt);
+    }
+    assert.deepEqual(received, ["incoming A", "outgoing A", "incoming B", ""]);
 });
 
 test("concurrent initialization waits for the same cache and dictionary load", async () => {

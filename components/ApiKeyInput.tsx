@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: GPL-3.0-or-later
  */
 
-import { Button, Forms, TextInput, useState } from "@webpack/common";
+import { Button, Forms, TextInput, useEffect, useState } from "@webpack/common";
 
 import { translateWithDeepL } from "../api/deepl";
 import { translateBatchWithGemini } from "../api/gemini";
@@ -38,9 +38,6 @@ function DeeplApiKeyInput({ setValue }: { setValue: (val: string) => void }) {
     return (
         <section style={{ marginBottom: "20px" }}>
             <Forms.FormTitle>DeepL API Key</Forms.FormTitle>
-            <Forms.FormText>
-                Your DeepL API key (ends with :fx for Free Tier)
-            </Forms.FormText>
         <div style={{ marginTop: "8px" }}>
             <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: "8px" }}>
                 <div style={{ flex: "1 1 180px", minWidth: 0 }}>
@@ -82,7 +79,7 @@ function DeeplApiKeyInput({ setValue }: { setValue: (val: string) => void }) {
             )}
             {status === "success" && (
                 <div style={{ marginTop: "8px", color: "var(--text-positive)" }}>
-                    API Key is valid and working!
+                    Key verified.
                 </div>
             )}
         </div>
@@ -96,6 +93,8 @@ function GeminiApiKeyInput({ setValue }: { setValue: (val: string) => void }) {
     const [validating, setValidating] = useState(false);
     const [status, setStatus] = useState<"idle"|"success"|"error">("idle");
     const [errorMsg, setErrorMsg] = useState("");
+
+    useEffect(() => setStatus("idle"), [geminiModel]);
 
     const handleValidate = async () => {
         if (!geminiApiKey) return;
@@ -115,9 +114,6 @@ function GeminiApiKeyInput({ setValue }: { setValue: (val: string) => void }) {
     return (
         <section style={{ marginBottom: "20px" }}>
             <Forms.FormTitle>Gemini API Key</Forms.FormTitle>
-            <Forms.FormText>
-                Your Gemini API Key
-            </Forms.FormText>
         <div style={{ marginTop: "8px" }}>
             <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: "8px" }}>
                 <div style={{ flex: "1 1 180px", minWidth: 0 }}>
@@ -159,22 +155,11 @@ function GeminiApiKeyInput({ setValue }: { setValue: (val: string) => void }) {
             )}
             {status === "success" && (
                 <div style={{ marginTop: "8px", color: "var(--text-positive)" }}>
-                    API Key is valid and working!
+                    Key verified.
                 </div>
             )}
 
-            <div style={{ marginTop: "16px", marginBottom: "4px", fontSize: "12px", color: "var(--text-muted)", textTransform: "uppercase", fontWeight: 700 }}>
-                Model Name
-            </div>
-            <TextInput
-                type="text"
-                value={geminiModel}
-                onChange={(val: string) => {
-                    settings.store.geminiModel = val;
-                    setStatus("idle");
-                }}
-                placeholder="gemini-3.1-flash-lite"
-            />
+
         </div>
         </section>
     );
@@ -186,6 +171,8 @@ function DeepSeekApiKeyInput({ setValue }: { setValue: (val: string) => void }) 
     const [validating, setValidating] = useState(false);
     const [status, setStatus] = useState<"idle"|"success"|"error">("idle");
     const [errorMsg, setErrorMsg] = useState("");
+
+    useEffect(() => setStatus("idle"), [deepseekModel]);
 
     const handleValidate = async () => {
         if (!deepseekApiKey) return;
@@ -225,9 +212,6 @@ function DeepSeekApiKeyInput({ setValue }: { setValue: (val: string) => void }) 
     return (
         <section style={{ marginBottom: "20px" }}>
             <Forms.FormTitle>DeepSeek API Key</Forms.FormTitle>
-            <Forms.FormText>
-                Your DeepSeek API Key
-            </Forms.FormText>
         <div style={{ marginTop: "8px" }}>
             <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: "8px" }}>
                 <div style={{ flex: "1 1 180px", minWidth: 0 }}>
@@ -269,7 +253,7 @@ function DeepSeekApiKeyInput({ setValue }: { setValue: (val: string) => void }) 
             )}
             {status === "success" && (
                 <div style={{ marginTop: "8px", color: "var(--text-positive)" }}>
-                    API Key is valid and working!
+                    Key verified.
                 </div>
             )}
 
@@ -285,44 +269,41 @@ function DeepSeekApiKeyInput({ setValue }: { setValue: (val: string) => void }) 
                 }}
                 placeholder="https://api.deepseek.com/chat/completions"
             />
-            <div style={{ marginTop: "16px", marginBottom: "4px", fontSize: "12px", color: "var(--text-muted)", textTransform: "uppercase", fontWeight: 700 }}>
-                Model Name
-            </div>
-            <TextInput
-                type="text"
-                value={deepseekModel}
-                onChange={(val: string) => {
-                    settings.store.deepseekModel = val;
-                    setStatus("idle");
-                }}
-                placeholder="deepseek-v4-flash"
-            />
+
         </div>
         </section>
     );
 }
 
 export function ApiKeysManager() {
-    const { geminiApiKey, deepseekApiKey, deeplApiKey, geminiModel, deepseekModel } = settings.use(["geminiApiKey", "deepseekApiKey", "deeplApiKey", "geminiModel", "deepseekModel"]);
+    const [expanded, setExpanded] = useState(false);
+    const { geminiModel, deepseekModel } = settings.use(["geminiModel", "deepseekModel"]);
     const engines = [
-        { name: "Gemini", key: geminiApiKey, model: geminiModel, url: "https://aistudio.google.com/api-keys", Input: GeminiApiKeyInput },
-        { name: "DeepSeek", key: deepseekApiKey, model: deepseekModel, url: "https://platform.deepseek.com/", Input: DeepSeekApiKeyInput },
-        { name: "DeepL", key: deeplApiKey, model: "", url: "https://app.deepl.com/your-account/keys", Input: DeeplApiKeyInput }
+        { name: "Gemini", model: geminiModel, setModel: (value: string) => { settings.store.geminiModel = value; }, Input: GeminiApiKeyInput },
+        { name: "DeepSeek", model: deepseekModel, setModel: (value: string) => { settings.store.deepseekModel = value; }, Input: DeepSeekApiKeyInput },
+        { name: "DeepL", model: "", setModel: undefined, Input: DeeplApiKeyInput }
     ];
 
     return (
-        <section className="bat-settings-section" aria-label="API connections">
-            <h3>API connections</h3>
-            <p className="bat-settings-description">{engines.filter(e => e.key.trim()).length} of 3 keys saved. Expand an engine to edit or test its key. Saved does not mean verified.</p>
-            {engines.map(({ name, key, model, url, Input }) => (
-                <details key={name} className="bat-settings-details bat-settings-connection">
-                    <summary><strong>{name}</strong><span className="bat-settings-badge">{key.trim() ? "Key saved" : "Key missing"}</span>{model && <span className="bat-settings-model">{model}</span>}</summary>
-                    <div className="bat-settings-detail-body">
-                        <a href={url} target="_blank" rel="noreferrer">Get a {name} API key ↗</a>
+        <section className="bat-settings-section" aria-label="API keys">
+            <Button size={Button.Sizes.SMALL} color={Button.Colors.PRIMARY} look={Button.Looks.FILLED}
+                aria-expanded={expanded} aria-controls="bat-api-keys"
+                onClick={() => setExpanded(value => !value)}>
+                {expanded ? "▾ API keys" : "▸ API keys"}
+            </Button>
+            <div id="bat-api-keys" hidden={!expanded}>
+                {engines.map(({ name, model, setModel, Input }) => (
+                    <section key={name} style={{ padding: "16px 0", borderBottom: "1px solid var(--background-modifier-accent)" }}>
                         <Input setValue={() => {}} />
-                    </div>
-                </details>
-            ))}
+                        {setModel && (
+                            <div>
+                                <Forms.FormTitle>Model</Forms.FormTitle>
+                                <TextInput value={model} onChange={setModel} placeholder="Model ID" />
+                            </div>
+                        )}
+                    </section>
+                ))}
+            </div>
         </section>
     );
 }

@@ -11,7 +11,25 @@ import { globalProgressStore } from "../utils/progressStore";
 import { APIBreaker, setGeminiQuotaLock, showApiToast, showGeminiQuotaToast } from "./breaker";
 import { translateWithDeepL } from "./deepl";
 import { translateBatchWithDeepSeek } from "./deepseek";
+import { TRANSLATION_TIMEOUT_MS } from "./errors";
 import { translateBatchWithGemini } from "./gemini";
+
+function limitTask(task: TranslationTask, expire: () => void) {
+    const { resolve } = task;
+    let settled = false;
+    const timer = setTimeout(() => {
+        if (settled) return;
+        task.resolve("");
+        expire();
+        showApiToast(task.engine, "Translation timed out (10s)");
+    }, TRANSLATION_TIMEOUT_MS);
+    task.resolve = result => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        resolve(result);
+    };
+}
 
 function showEngineToast(engine: string, reason: string) {
     showApiToast(engine, reason);
@@ -75,6 +93,10 @@ export class GeminiChannelWorker {
     }
 
     public enqueue(task: TranslationTask) {
+        limitTask(task, () => {
+            this.registry.delete(task.id);
+            if (this.registry.size === 0) this.reset();
+        });
         task.status = "QUEUED";
         this.registry.set(task.id, task);
         this.schedule();
@@ -241,11 +263,12 @@ export class GeminiChannelWorker {
 
                 try {
                     if (generation !== this.generation) return;
+                    if (!chunk.some(t => this.registry.get(t.id) === t)) continue;
                     this.abortController = new AbortController();
-                    const timeoutId = setTimeout(() => this.abortController?.abort(), 300000);
+                    const timeoutId = setTimeout(() => this.abortController?.abort(), TRANSLATION_TIMEOUT_MS);
 
                     try {
-                        const messagesToTranslate = chunk.map(t => ({ id: t.id, text: t.text }));
+                        const messagesToTranslate = chunk.filter(t => this.registry.get(t.id) === t).map(t => ({ id: t.id, text: t.text }));
 
                         let combinedDmPrompt = dmPrompt;
                         const chunkGlossary: Record<string, string> = {};
@@ -288,7 +311,7 @@ export class GeminiChannelWorker {
                         }
 
                         const timeoutPromise = new Promise<any>((_, reject) => {
-                            this.abortController?.signal.addEventListener("abort", () => reject(new Error("Timeout: Gemini API logical abort (5m limit).")));
+                            this.abortController?.signal.addEventListener("abort", () => reject(new Error("Translation timed out (10s)")));
                         });
 
                         const results = await Promise.race([fetchPromise, timeoutPromise]);
@@ -434,6 +457,10 @@ export class DeeplChannelWorker {
     }
 
     public enqueue(task: TranslationTask) {
+        limitTask(task, () => {
+            this.registry.delete(task.id);
+            if (this.registry.size === 0) this.reset();
+        });
         task.status = "QUEUED";
         this.registry.set(task.id, task);
         this.schedule();
@@ -485,10 +512,11 @@ export class DeeplChannelWorker {
 
         for (let i = 0; i < reversedTasks.length; i += DEEPL_BATCH_SIZE) {
             if (generation !== this.generation) return;
-            const chunk = reversedTasks.slice(i, i + DEEPL_BATCH_SIZE);
+            const chunk = reversedTasks.slice(i, i + DEEPL_BATCH_SIZE).filter(t => this.registry.get(t.id) === t);
+            if (!chunk.length) continue;
 
             this.abortController = new AbortController();
-            const timeoutId = setTimeout(() => this.abortController?.abort(), 30000);
+            const timeoutId = setTimeout(() => this.abortController?.abort(), TRANSLATION_TIMEOUT_MS);
 
             try {
                 const texts = chunk.map(t => t.text);

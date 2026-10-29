@@ -216,7 +216,10 @@ export function TranslationAccessory({ message }: { message: Message }) {
     return (
         <div className={containerClasses} style={{ color: displayColor, marginTop: topMargin }}>
             {(!hideOriginal && showSeparator) && <div className="bat-separator" />}
-            {Parser.parse(displayText)}
+            {Parser.parse(displayText, true, {
+                channelId: message.channel_id,
+                messageId: message.id
+            })}
         </div>
     );
 }

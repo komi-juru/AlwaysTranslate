@@ -7,6 +7,7 @@
 import { PluginNative } from "@utils/types";
 
 import { settings } from "../settings";
+import { httpError } from "./errors";
 import { buildDeepSeekSystemPrompt, buildDeepSeekUserPrompt } from "./geminiPrompt";
 import { nativeRequest } from "./nativeRequest";
 
@@ -23,7 +24,7 @@ export async function translateBatchWithDeepSeek(
     baseUrl?: string
 ): Promise<{ id: string; text: string }[]> {
     if (!messages.length) return [];
-    if (!apiKey) throw new Error("API Key not set");
+    if (!apiKey) throw new Error("API key missing");
 
     const systemPrompt = buildDeepSeekSystemPrompt();
     const userPrompt = buildDeepSeekUserPrompt(targetLang, dmPrompt, messages);
@@ -59,20 +60,10 @@ export async function translateBatchWithDeepSeek(
     try {
         res = await nativeRequest(id => Native.batDeepSeekFetch(endpoint, apiKey, JSON.stringify(payload), id), signal);
     } catch (e) {
-        throw new Error("DeepSeek API network request failed");
+        throw e;
     }
 
-    if (!res.ok) {
-        let errStr = res.data || String(res.status);
-        try {
-            const errObj = JSON.parse(res.data);
-            errStr = errObj.error?.message || JSON.stringify(errObj);
-        } catch {}
-
-        const error = new Error(`DeepSeek API Error: ${res.status} ${errStr}`);
-        (error as any).status = res.status;
-        throw error;
-    }
+    if (!res.ok) throw httpError(res.status, String(res.data));
 
     const resultText = (() => {
         try {
