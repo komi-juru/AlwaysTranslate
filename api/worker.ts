@@ -21,7 +21,7 @@ function limitTask(task: TranslationTask, expire: () => void) {
         if (settled) return;
         task.resolve("");
         expire();
-        showApiToast(task.engine, "Translation timed out (10s)");
+        showApiToast(task.engine, "Translation timed out (20s)");
     }, TRANSLATION_TIMEOUT_MS);
     task.resolve = result => {
         if (settled) return;
@@ -188,6 +188,12 @@ export class GeminiChannelWorker {
             ecoProgress = 1;
         }
 
+        // Reserve half the deadline for the API even in indefinite economy mode.
+        const latestDispatch = this.firstMessageTime + TRANSLATION_TIMEOUT_MS / 2;
+        if (deadline >= latestDispatch) {
+            deadline = latestDispatch;
+            nextAction = "process";
+        }
         this.deadline = deadline;
 
         window.dispatchEvent(new CustomEvent(`bat-gemini-debounced-${this.channelId}`, {
@@ -311,7 +317,7 @@ export class GeminiChannelWorker {
                         }
 
                         const timeoutPromise = new Promise<any>((_, reject) => {
-                            this.abortController?.signal.addEventListener("abort", () => reject(new Error("Translation timed out (10s)")));
+                            this.abortController?.signal.addEventListener("abort", () => reject(new Error("Translation timed out (20s)")));
                         });
 
                         const results = await Promise.race([fetchPromise, timeoutPromise]);

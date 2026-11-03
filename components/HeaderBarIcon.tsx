@@ -8,8 +8,9 @@ import { ChatBarButton, ChatBarButtonFactory } from "@api/ChatButtons";
 import { plugins } from "@api/PluginManager";
 import { openPluginModal } from "@components/settings";
 import { findComponentByCodeLazy } from "@webpack";
-import { Menu, Popout, SelectedChannelStore, Toasts, useRef, useState, useStateFromStores } from "@webpack/common";
+import { Menu, Popout, SelectedChannelStore, useRef, useState, useStateFromStores } from "@webpack/common";
 
+import { showTranslationToast } from "../utils/toast";
 import { reScheduleAllWorkers } from "../api/translate";
 import { deeplWorkers, geminiWorkers } from "../api/worker";
 import { CHANNEL_ENGINE_OPTIONS, GLOBAL_ENGINE_OPTIONS, LANGUAGES } from "../constants";
@@ -205,27 +206,15 @@ export const ManualBatchChatBarIcon: ChatBarButtonFactory = ({ isMainChat }) => 
             tooltip="Translate Now"
             onClick={() => {
                 if (isGemini && !geminiApiKey) {
-                    Toasts.show({
-                        message: "Gemini API Key is required for Manual Translation. Please set it in AlwaysTranslate settings.",
-                        id: "gemini-api-key-missing",
-                        type: Toasts.Type.FAILURE
-                    });
+                    showTranslationToast("Gemini API Key is required for Manual Translation. Please set it in AlwaysTranslate settings.");
                     return;
                 }
                 if (isDeepSeek && !settings.store.deepseekApiKey) {
-                    Toasts.show({
-                        message: "DeepSeek API Key is required for Manual Translation. Please set it in AlwaysTranslate settings.",
-                        id: "deepseek-api-key-missing",
-                        type: Toasts.Type.FAILURE
-                    });
+                    showTranslationToast("DeepSeek API Key is required for Manual Translation. Please set it in AlwaysTranslate settings.");
                     return;
                 }
                 if (isDeepl && !deeplApiKey) {
-                    Toasts.show({
-                        message: "DeepL API Key is required for Manual Translation. Please set it in AlwaysTranslate settings.",
-                        type: Toasts.Type.FAILURE,
-                        id: Toasts.genId()
-                    });
+                    showTranslationToast("DeepL API Key is required for Manual Translation. Please set it in AlwaysTranslate settings.");
                     return;
                 }
                 triggerManualBatch(isGemini || isDeepSeek);

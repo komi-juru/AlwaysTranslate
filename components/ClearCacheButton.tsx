@@ -4,8 +4,9 @@
  * SPDX-License-Identifier: GPL-3.0-or-later
  */
 
-import { Button, Forms, Toasts, useState } from "@webpack/common";
+import { Button, Forms, useState } from "@webpack/common";
 
+import { showTranslationToast } from "../utils/toast";
 import { settings } from "../settings";
 import { TranslationCache } from "../utils/cache";
 
@@ -26,11 +27,7 @@ export function ClearCacheButton() {
                     settings.store.geminiQuotaLocks = {};
                     settings.store._cacheVersion = (settings.store._cacheVersion || 0) + 1;
                     setCount(0);
-                    Toasts.show({
-                        message: "All translation caches have been cleared.",
-                        type: Toasts.Type.SUCCESS,
-                        id: Toasts.genId()
-                    });
+                    showTranslationToast("All translation caches have been cleared.", "success");
                 }}
             >
                 Clear All Caches ({count})

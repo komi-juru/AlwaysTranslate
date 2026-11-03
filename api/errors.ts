@@ -4,11 +4,11 @@
  * SPDX-License-Identifier: GPL-3.0-or-later
  */
 
-export const TRANSLATION_TIMEOUT_MS = 10_000;
+export const TRANSLATION_TIMEOUT_MS = 20_000;
 
 export function describeApiError(status: number | null, code: string | null, message: string): string {
     const text = message.toLowerCase();
-    if (/timeout|timed out|time limit/.test(text)) return "Translation timed out (10s)";
+    if (/timeout|timed out|time limit/.test(text)) return "Translation timed out (20s)";
     if (/api key.*missing|missing api key/.test(text)) return "API key missing";
     if (code === "API_KEY_INVALID" || /api.?key.*(?:invalid|not valid)|invalid.*api.?key|invalid auth/.test(text) || status === 401) return "Invalid API key";
     if (status === 403) return "Access denied: check API permissions or region";

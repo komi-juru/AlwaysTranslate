@@ -23,7 +23,7 @@ export async function nativeRequest<T>(request: (id: string) => Promise<T>, sign
     signal?.addEventListener("abort", abort, { once: true });
     const timer = setTimeout(() => {
         void Native.batCancelRequest(id).catch(() => {});
-        rejectAbort(new Error("Translation timed out (10s)"));
+        rejectAbort(new Error("Translation timed out (20s)"));
     }, TRANSLATION_TIMEOUT_MS);
     try {
         const result = await Promise.race([request(id), aborted]);

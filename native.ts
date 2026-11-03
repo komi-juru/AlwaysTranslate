@@ -14,7 +14,7 @@ async function translationFetch(event: IpcMainInvokeEvent, requestId: string, ur
     const key = event.sender.id + ":" + requestId;
     const controller = new AbortController();
     requests.set(key, controller);
-    const timer = setTimeout(() => controller.abort(), Math.min(timeout, 10_000));
+    const timer = setTimeout(() => controller.abort(), Math.min(timeout, 20_000));
     try {
         const res = await fetch(url, { ...init, signal: controller.signal });
         return { ok: res.ok, status: res.status, data: await res.text() };

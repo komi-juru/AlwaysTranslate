@@ -5,8 +5,9 @@
  */
 
 import { Divider } from "@components/Divider";
-import { Button, ChannelStore, Forms, GuildStore, SearchableSelect, TextInput, Toasts, UserStore, useState, useStateFromStores } from "@webpack/common";
+import { Button, ChannelStore, Forms, GuildStore, SearchableSelect, TextInput, UserStore, useState, useStateFromStores } from "@webpack/common";
 
+import { showTranslationToast } from "../utils/toast";
 import { CHANNEL_ENGINE_OPTIONS, GLOBAL_ENGINE_OPTIONS, LANGUAGES } from "../constants";
 import {
     addChannel as addCh,
@@ -116,21 +117,13 @@ export function ChannelManager() {
         if (!cleanId) return;
 
         if (!/^\d{17,20}$/.test(cleanId)) {
-            Toasts.show({
-                message: "Invalid channel ID format.",
-                type: Toasts.Type.FAILURE,
-                id: Toasts.genId()
-            });
+            showTranslationToast("Invalid channel ID format.");
             setSelectedChannel(undefined);
             return;
         }
 
         if (channels.some((c: PartialChannel) => c.id === cleanId)) {
-            Toasts.show({
-                message: "Channel already added.",
-                type: Toasts.Type.FAILURE,
-                id: Toasts.genId()
-            });
+            showTranslationToast("Channel already added.");
             setSelectedChannel(undefined);
             return;
         }

@@ -20,21 +20,21 @@ test("API errors distinguish credentials, permissions, balance, quota, service a
     assert.match(describeApiError(-1, null, "fetch failed"), /Network/);
     assert.match(describeApiError(null, null, "missing content"), /no translation/);
     assert.match(describeApiError(null, null, "Failed to parse JSON"), /Invalid API response/);
-    assert.match(describeApiError(null, null, "Translation timed out (10s)"), /timed out/);
+    assert.match(describeApiError(null, null, "Translation timed out (20s)"), /timed out/);
     const error = httpError(403, '{"error":{"message":"Forbidden"}}');
     assert.equal(error.status, 403); assert.match(error.message, /Access denied/);
 });
 
-test("queued AI work expires after 10 seconds even in indefinite economy mode", async t => {
+test("indefinite economy mode dispatches after 10 seconds", async t => {
     t.mock.timers.enable({ apis: ["setTimeout"] });
     const e = environment(); let calls = 0;
-    e.mocks["api/gemini.ts"].translateBatchWithGemini = async () => { calls++; return []; };
+    e.mocks["api/gemini.ts"].translateBatchWithGemini = async () => { calls++; return [{ id: "deadline", text: "translated" }]; };
     const { GeminiChannelWorker, geminiWorkers } = e.load("api/worker.ts");
     const worker = new GeminiChannelWorker("123"); geminiWorkers.set("123", worker);
     const job = task("deadline"); worker.enqueue(job);
     t.mock.timers.tick(9999); assert.equal(worker.registry.size, 1);
-    t.mock.timers.tick(1); assert.equal(await job.result, "");
-    assert.equal(worker.registry.size, 0); assert.equal(geminiWorkers.size, 0); assert.equal(calls, 0);
+    assert.equal(calls, 0); t.mock.timers.tick(2); assert.equal(await job.result, "translated"); await tick();
+    assert.equal(worker.registry.size, 0); assert.equal(geminiWorkers.size, 0); assert.equal(calls, 1);
 });
 
 test("hung AI and DeepL requests abort at the task deadline and ignore late completion", async t => {
@@ -46,7 +46,7 @@ test("hung AI and DeepL requests abort at the task deadline and ignore late comp
         const workers = e.load("api/worker.ts");
         const worker = engine === "gemini" ? new workers.GeminiChannelWorker("123") : new workers.DeeplChannelWorker("deepl|||auto|||ko|||key");
         const job = task(engine); worker.enqueue(job); worker.flushNow(); await tick();
-        t.mock.timers.tick(10000); assert.equal(await job.result, ""); assert.ok(signal.aborted);
+        t.mock.timers.tick(20000); assert.equal(await job.result, ""); assert.ok(signal.aborted);
         pending.resolve(engine === "gemini" ? [{ id: engine, text: "late" }] : ["late"]);
         await tick(); assert.equal(worker.registry.size, 0); assert.equal(worker.state, "IDLE");
     }
@@ -60,7 +60,7 @@ test("native IPC hangs are bounded and cancellation is forwarded", async t => {
     let id;
     const promise = nativeRequest(requestId => { id = requestId; return new Promise(() => {}); });
     const rejection = assert.rejects(promise, /timed out/);
-    t.mock.timers.tick(10000); await rejection;
+    t.mock.timers.tick(20000); await rejection;
     assert.deepEqual(cancelled, [id]);
 });
 

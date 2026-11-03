@@ -4,8 +4,9 @@
  * SPDX-License-Identifier: GPL-3.0-or-later
  */
 
-import { Toasts } from "@webpack/common";
 
+
+import { showTranslationToast } from "../utils/toast";
 import { type GeminiQuotaKind, type GeminiQuotaLockState,settings } from "../settings";
 import { describeApiError } from "./errors";
 
@@ -31,11 +32,7 @@ export function showApiToast(engine: string, reason: string, cooldown = TOAST_DE
     const message = `${capitalize(engine)}: ${reason}`;
     if (!shouldShowToast(message, cooldown)) return;
 
-    Toasts.show({
-        message,
-        id: Toasts.genId(),
-        type: Toasts.Type.FAILURE
-    });
+    showTranslationToast(message);
 }
 
 function getTimeZoneOffsetMinutes(date: Date, timeZone: string) {
