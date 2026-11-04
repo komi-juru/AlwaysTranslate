@@ -30,8 +30,9 @@ export async function translate(
     customPrompt?: string
 ): Promise<string> {
     const parts = splitTranslationText(text);
+    const groupId = parts.length > 1 ? crypto.randomUUID() : undefined;
     const requests = parts.map(part => part.text.trim() ? translateChunk(channelId, messageId, part.text, _sourceLang,
-        targetLang, engine, apiKeys, customPrompt) : Promise.resolve(part.text));
+        targetLang, engine, apiKeys, customPrompt, groupId) : Promise.resolve(part.text));
     if (!messageId) aiWorkers.get(channelId)?.flushNow();
     const results = await Promise.all(requests);
     if (results.some((result, index) => !result && parts[index].text.trim())) return "";
@@ -46,7 +47,8 @@ async function translateChunk(
     targetLang: string,
     engine: string,
     apiKeys: { gemini: string, deepseek: string },
-    customPrompt?: string
+    customPrompt?: string,
+    groupId?: string
 ): Promise<string> {
     if (engine?.startsWith("gemini") || engine?.startsWith("deepseek")) {
         const isDeepSeek = engine.startsWith("deepseek");
@@ -71,7 +73,7 @@ async function translateChunk(
             const worker = aiWorkers.get(channelId)!;
             const taskId = crypto.randomUUID();
             worker.enqueue({
-                id: taskId, messageId, channelId, text, resolve, reject, targetLang, apiKey: engineKey, engine, dmPrompt,
+                id: taskId, groupId, messageId, channelId, text, resolve, reject, targetLang, apiKey: engineKey, engine, dmPrompt,
                 model: isDeepSeek ? settings.store.deepseekModel : settings.store.geminiModel,
                 endpoint: isDeepSeek ? settings.store.deepseekBaseUrl : undefined
             });
@@ -96,7 +98,7 @@ async function translateChunk(
 
 
 // --- Tokenizer Helpers ---
-const PRESERVE_BASE = /<@[!&]?\d+>|<#\d+>|<[^>]+>|https?:\/\/[^\s]+|```[\s\S]*?```|`[^`]+`/gmu;
+const PRESERVE_BASE = /\[\s*token\d+\s*\]|<@[!&]?\d+>|<#\d+>|<[^>]+>|https?:\/\/[^\s]+|```[\s\S]*?```|`[^`]+`/gimu;
 
 export function getAiBatchState(channelId: string, messageId: string) {
     const worker = aiWorkers.get(channelId);
@@ -134,35 +136,28 @@ export function getAiBatchState(channelId: string, messageId: string) {
 
 function tokenizeText(text: string, hideEmojis: boolean, hideMentions: boolean): { textToTranslate: string, tokens: string[] } {
     const tokens: string[] = [];
-    let textToTranslate = text;
-
-    if (hideEmojis) {
-        // Remove emojis completely
-        textToTranslate = textToTranslate
-            .replace(/<a?:\w+:\d+>/g, "")
-            .replace(/[\p{Emoji_Presentation}\p{Extended_Pictographic}]/gu, "");
-    }
-
-    if (hideMentions) {
-        // Remove mentions completely
-        textToTranslate = textToTranslate.replace(/<@[!&]?\d+>/g, "");
-    }
-
-    // Tokenize remaining special elements (URLs, code blocks, etc.)
-    textToTranslate = textToTranslate.replace(PRESERVE_BASE, match => {
+    let textToTranslate = text.replace(PRESERVE_BASE, match => {
+        if (hideMentions && /^<@[!&]?\d+>$/.test(match)) return "";
+        if (hideEmojis && /^<a?:\w+:\d+>$/.test(match)) return "";
         const id = tokens.length;
         tokens.push(match);
         return `[token${id}]`;
     });
+    if (hideEmojis) textToTranslate = textToTranslate.replace(/[\p{Emoji_Presentation}\p{Extended_Pictographic}]/gu, "");
 
     return { textToTranslate, tokens };
 }
 
 function restoreTokens(text: string, tokens: string[]): string {
-    return text.replace(/\[\s*token(\d+)\s*\]/gi, (match, idStr) => {
+    const seen = new Set<number>();
+    const restored = text.replace(/\[\s*token(\d+)\s*\]/gi, (match, idStr) => {
         const id = parseInt(idStr, 10);
-        return tokens[id] !== undefined ? tokens[id] : match;
+        if (tokens[id] === undefined || seen.has(id)) throw new Error("Invalid translation: damaged protected content");
+        seen.add(id);
+        return tokens[id];
     });
+    if (seen.size !== tokens.length) throw new Error("Invalid translation: missing protected content");
+    return restored;
 }
 
 export async function safeTranslate(
@@ -173,7 +168,8 @@ export async function safeTranslate(
     apiKeys: { gemini: string, deepseek: string },
     channelId?: string,
     messageId?: string,
-    customPrompt?: string
+    customPrompt?: string,
+    keepUnchanged = false
 ): Promise<string | null> {
     if (!shouldTranslate(content, targetLang)) return null;
 
@@ -191,7 +187,8 @@ export async function safeTranslate(
         customPrompt
     );
 
-    if (!result || result === textToTranslate) return null;
+    if (!result) return null;
+    if (result === textToTranslate) return keepUnchanged ? content : null;
 
     // Restore tokens
     return restoreTokens(result, tokens);

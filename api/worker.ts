@@ -15,7 +15,7 @@ import { TRANSLATION_TIMEOUT_MS } from "./errors";
 import { translateBatchWithGemini } from "./gemini";
 import { AI_REQUEST_CONCURRENCY, aiRequestLimiters } from "./requestLimiter";
 
-function limitTask(task: TranslationTask, expire: () => void) {
+function limitTask(task: TranslationTask, expire: () => void, fail: (error: Error) => void) {
     const { resolve, reject } = task;
     let settled = false;
     const timer = setTimeout(() => {
@@ -29,6 +29,7 @@ function limitTask(task: TranslationTask, expire: () => void) {
         settled = true;
         clearTimeout(timer);
         resolve(result);
+        if (!result) fail(new Error("Translation returned no result"));
     };
     task.reject = error => {
         if (settled) return;
@@ -36,6 +37,7 @@ function limitTask(task: TranslationTask, expire: () => void) {
         clearTimeout(timer);
         if (reject) reject(error);
         else resolve("");
+        fail(error);
     };
 }
 
@@ -45,6 +47,7 @@ function showEngineToast(engine: string, reason: string) {
 
 export interface TranslationTask {
     id: string;
+    groupId?: string;
     messageId: string;
     channelId: string;
     text: string;
@@ -85,15 +88,27 @@ export class AiChannelWorker {
 
     public enqueue(task: TranslationTask) {
         limitTask(task, () => {
-            this.registry.delete(task.id);
-            for (const [controller, ids] of this.activeBatches) {
-                if (ids.delete(task.id) && ids.size === 0) controller.abort();
-            }
+            this.removeTask(task.id);
             if (this.registry.size === 0) this.reset();
-        });
+        }, error => this.cancelSiblings(task, error));
         task.status = "QUEUED";
         this.registry.set(task.id, task);
         this.schedule();
+    }
+
+    private removeTask(id: string) {
+        this.registry.delete(id);
+        for (const [controller, ids] of this.activeBatches) {
+            if (ids.delete(id) && ids.size === 0) controller.abort();
+        }
+    }
+
+    private cancelSiblings(task: TranslationTask, error: Error) {
+        if (!task.groupId || this.registry.get(task.id) !== task) return;
+        const siblings = Array.from(this.registry.values()).filter(other => other !== task && other.groupId === task.groupId);
+        // Remove all siblings first so their rejection cannot recursively cancel the group.
+        for (const sibling of siblings) this.removeTask(sibling.id);
+        for (const sibling of siblings) sibling.reject!(error);
     }
 
     public firstMessageTime: number = 0;
@@ -329,8 +344,9 @@ export class AiChannelWorker {
     }
 
     private clearPendingTasks(error?: Error) {
-        this.registry.forEach(t => error && t.reject ? t.reject(error) : t.resolve(""));
+        const tasks = Array.from(this.registry.values());
         this.registry.clear();
+        tasks.forEach(t => error && t.reject ? t.reject(error) : t.resolve(""));
     }
 
     public reset(error?: Error) {

@@ -28,7 +28,7 @@ export class TranslationCache {
     private clearPending = false;
     private initPromise: Promise<void> | null = null;
     private globalGeneration = 0;
-    private channelGenerations = new Map<string, number>();
+    private channelGenerations = new Map<string, Set<{ valid: boolean }>>();
     public cacheRevision = 0;
     private pending = new Map<string, { source: string; promise: Promise<string | null> }>();
     private saveTimeout: ReturnType<typeof setTimeout> | null = null;
@@ -66,9 +66,20 @@ export class TranslationCache {
 
     private handleBeforeUnload = () => { void this.performNativeSave(); };
 
-    public getGeneration(key: string): string {
+    public watchGeneration(key: string) {
         const channel = key.split(":")[1];
-        return this.globalGeneration + ":" + (this.channelGenerations.get(channel) || 0);
+        const generation = this.globalGeneration;
+        const token = { valid: true };
+        let watchers = this.channelGenerations.get(channel);
+        if (!watchers) this.channelGenerations.set(channel, watchers = new Set());
+        watchers.add(token);
+        return {
+            isCurrent: () => token.valid && generation === this.globalGeneration,
+            release: () => {
+                watchers.delete(token);
+                if (!watchers.size && this.channelGenerations.get(channel) === watchers) this.channelGenerations.delete(channel);
+            }
+        };
     }
 
     private remove(key: string) {
@@ -161,7 +172,11 @@ export class TranslationCache {
                 } catch (error) {
                     if (generation === this.globalGeneration) {
                         this.clearPending ||= patch.clear;
-                        for (const [key, value] of patch.entries) if (!this.changes.has(key)) this.changes.set(key, value);
+                        for (const [key, value] of patch.entries) {
+                            // The native process may have applied the patch before its disk write failed.
+                            if (value !== null) this.nativeKeys.add(key);
+                            if (!this.changes.has(key)) this.changes.set(key, value);
+                        }
                     }
                     Logger.warn("Cache", "Failed to save cache", error);
                     this.saveFailures++;
@@ -218,7 +233,8 @@ export class TranslationCache {
     has(key: string): boolean { return this.persistentCache.has(key); }
 
     public clearChannel(channelId: string) {
-        this.channelGenerations.set(channelId, (this.channelGenerations.get(channelId) || 0) + 1); this.cacheRevision++;
+        this.channelGenerations.get(channelId)?.forEach(token => { token.valid = false; });
+        this.channelGenerations.delete(channelId); this.cacheRevision++;
         const prefix = getChannelCachePrefix(channelId);
         for (const key of this.persistentCache.keys()) if (key.startsWith(prefix)) this.remove(key);
         for (const key of this.outgoingCache.keys()) if (key.startsWith(prefix)) {

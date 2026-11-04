@@ -1,11 +1,11 @@
-import { Heading as FormTitle } from "@components/Heading";
-import { Text as FormText } from "@components/Text";
 /*
  * Vencord, a Discord client mod
  * Copyright (c) 2026 Vendicated and contributors
  * SPDX-License-Identifier: GPL-3.0-or-later
  */
 
+import { Heading as FormTitle } from "@components/Heading";
+import { Text as FormText } from "@components/Text";
 import { ColorPicker } from "@webpack/common";
 
 import { settings } from "../settings";

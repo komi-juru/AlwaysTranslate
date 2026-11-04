@@ -147,18 +147,18 @@ test("channel clear removes AI, outgoing and pending entries without affecting o
     cache.set("v3:1:ai", "AI", "gemini"); cache.set("v3:1:deepseek", "DeepSeek", "deepseek"); cache.set("v3:2:ai", "Other", "gemini");
     cache.setOutgoing("1", "sent", "original"); cache.setOutgoing("2", "sent", "other original");
     cache.setPending("v3:1:pending", "source", Promise.resolve("result"));
-    const generation = cache.getGeneration("v3:1:ai"), otherGeneration = cache.getGeneration("v3:2:ai");
+    const generation = cache.watchGeneration("v3:1:ai"), otherGeneration = cache.watchGeneration("v3:2:ai");
     cache.clearChannel("1");
     assert.equal(cache.getChannelCount("1"), 0); assert.equal(cache.peek("v3:2:ai"), "Other");
     assert.equal(cache.getOutgoing("1", "sent"), undefined); assert.equal(cache.getOutgoing("2", "sent"), "other original");
     assert.equal(cache.getPending("v3:1:pending", "source"), undefined);
-    assert.notEqual(cache.getGeneration("v3:1:ai"), generation); assert.equal(cache.getGeneration("v3:2:ai"), otherGeneration);
+    assert.equal(generation.isCurrent(), false); assert.equal(otherGeneration.isCurrent(), true); generation.release(); otherGeneration.release();
     await cache.flush();
 });
 
 test("cache clear invalidates in-flight results and rejected pending requests are cleaned", async () => {
     const e = environment(); const cache = e.load("utils/cache.ts").TranslationCache.getInstance();
-    const generation = cache.getGeneration("v3:1:key"); cache.clearAll(); assert.notEqual(cache.getGeneration("v3:1:key"), generation);
+    const generation = cache.watchGeneration("v3:1:key"); cache.clearAll(); assert.equal(generation.isCurrent(), false); generation.release();
     const rejected = Promise.reject(Error("network")); cache.setPending("v3:1:key", "source", rejected);
     await tick(); assert.equal(cache.getPending("v3:1:key", "source"), undefined); await cache.flush();
 });
@@ -303,7 +303,7 @@ function outgoingEnvironment() {
     const actions = [], requests = [], pending = deferred();
     Object.assign(e.mocks["@webpack/common"], {
         SelectedChannelStore: { getChannelId: () => selected },
-        DraftType: { ChannelMessage: 0 }, DraftStore: { getDraft: () => draft },
+        DraftType: { ChannelMessage: 0 }, DraftStore: { getDraft: () => draft, addChangeListener() {}, removeChangeListener() {} },
         ReactDOM: { flushSync: fn => fn() },
         ComponentDispatch: { dispatchToLastSubscribed: (event, data) => {
             actions.push([event, data]); draft = event === "CLEAR_TEXT" ? "" : draft + data.rawText;
@@ -405,7 +405,7 @@ test("automatic execution skips excluded channels and disabled engines and share
         e.mocks["@webpack/common"].useEffect = fn => effects.push(fn);
         e.mocks["api/translate.ts"] = { safeTranslate: () => { calls++; return result.promise; } };
         e.mocks["utils/cache.ts"] = { TranslationCache: { getInstance: () => ({
-            getGeneration: () => "0", getPending: () => mode === "pending" ? result.promise : undefined,
+            watchGeneration: () => ({ isCurrent: () => true, release() {} }), getPending: () => mode === "pending" ? result.promise : undefined,
             setPending() {}, rememberDisplayed() {}, set: (...args) => writes.push(args)
         }) } };
         const { useTranslationExecution } = e.load("hooks/useTranslationExecution.ts");
@@ -1091,4 +1091,260 @@ test("accessory uses displayed cache identity after engine and model changes, bu
     assert.equal(execution.cachedTranslated, undefined);
     e.store.translationEngine = "disable"; assert.equal(TranslationAccessory({ message }), null); assert.equal(visibility.allowed, false);
     await cache.flush();
+});
+
+
+test("a failed long translation cancels only its own remaining chunks for both engines", async () => {
+    for (const engine of ["gemini", "deepseek"]) {
+        const e = environment(), first = deferred(), second = deferred(), requests = [];
+        e.mocks["api/" + engine + ".ts"][engine === "gemini" ? "translateBatchWithGemini" : "translateBatchWithDeepSeek"] = (...args) => {
+            requests.push(args);
+            if (requests.length === 1) return first.promise;
+            if (requests.length === 2) return second.promise;
+            return Promise.resolve(args[1].map(m => ({ id: m.id, text: "other translated" })));
+        };
+        const { translate } = e.load("api/translate.ts"), workers = e.load("api/worker.ts");
+        const long = translate("123", "123456789012345678", "x".repeat(30000), "auto", "ko", engine, { gemini: "key", deepseek: "key" });
+        const failed = assert.rejects(long, /first chunk failed/);
+        const other = translate("123", "123456789012345678", "other", "auto", "ko", engine, { gemini: "key", deepseek: "key" });
+        workers.aiWorkers.get("123").flushNow(); await tick(); assert.equal(requests.length, 2);
+        first.reject(Error("first chunk failed")); await failed; await tick();
+        assert.equal(await other, "other translated"); assert.equal(requests.length, 3);
+        assert.equal(requests[1][6].aborted, true);
+        second.resolve(requests[1][1].map(m => ({ id: m.id, text: "late" }))); await tick();
+        assert.equal(workers.aiWorkers.size, 0);
+    }
+});
+
+test("cancelling a chunk preserves other messages in its active batch", async () => {
+    const e = environment(), first = deferred(), mixed = deferred(), requests = [];
+    e.mocks["api/gemini.ts"].translateBatchWithGemini = (...args) => { requests.push(args); return requests.length === 1 ? first.promise : mixed.promise; };
+    const { AiChannelWorker } = e.load("api/worker.ts"), worker = new AiChannelWorker("123");
+    const jobs = [task("first", "x".repeat(6000)), task("sibling", "x".repeat(3000)), task("other", "y".repeat(1000)), task("queued", "x".repeat(6000))];
+    for (const job of jobs) { if (job.id !== "other") job.groupId = "long-message"; worker.enqueue(job); }
+    worker.flushNow(); await tick(); assert.equal(requests.length, 2);
+    first.reject(Error("failed")); await tick();
+    assert.equal(requests[1][6].aborted, false); assert.equal(worker.registry.size, 1); assert.equal(worker.registry.has("other"), true);
+    mixed.resolve([{ id: "sibling", text: "late" }, { id: "other", text: "success" }]);
+    assert.deepEqual(await Promise.all(jobs.map(job => job.result)), ["", "", "success", ""]);
+    await tick(); assert.equal(requests.length, 2); assert.equal(worker.registry.size, 0);
+});
+
+test("empty chunk results cancel sibling chunks without waiting for a hung request", async () => {
+    const e = environment(), first = deferred(), requests = [];
+    e.mocks["api/gemini.ts"].translateBatchWithGemini = (...args) => { requests.push(args); return requests.length === 1 ? first.promise : new Promise(() => {}); };
+    const { translate } = e.load("api/translate.ts"), workers = e.load("api/worker.ts");
+    const result = translate("123", "", "x".repeat(18000), "auto", "ko", "gemini", { gemini: "key", deepseek: "" });
+    const failed = assert.rejects(result, /no result/);
+    await tick(); first.resolve(requests[0][1].map(m => ({ id: m.id, text: "" }))); await failed; await tick();
+    assert.equal(requests.length, 2); assert.equal(requests[1][6].aborted, true); assert.equal(workers.aiWorkers.size, 0);
+});
+
+test("a chunk deadline cancels its siblings and releases all worker state", async t => {
+    t.mock.timers.enable({ apis: ["setTimeout"] });
+    const e = environment(), signals = [];
+    e.mocks["api/gemini.ts"].translateBatchWithGemini = (...args) => { signals.push(args[6]); return new Promise(() => {}); };
+    const { translate } = e.load("api/translate.ts"), workers = e.load("api/worker.ts");
+    const result = translate("123", "", "x".repeat(30000), "auto", "ko", "gemini", { gemini: "key", deepseek: "" });
+    const failed = assert.rejects(result, /timed out/); await tick();
+    t.mock.timers.tick(20000); await failed; await tick();
+    assert.equal(signals.length, 2); assert.ok(signals.every(signal => signal.aborted)); assert.equal(workers.aiWorkers.size, 0);
+});
+
+
+test("resetting a grouped translation retains the existing empty-result cancellation behavior", async () => {
+    const e = environment(), { translate } = e.load("api/translate.ts"), workers = e.load("api/worker.ts");
+    const result = translate("123", "123456789012345678", "x".repeat(18000), "auto", "ko", "gemini", { gemini: "key", deepseek: "" });
+    workers.resetAllWorkers(); assert.equal(await result, ""); assert.equal(workers.aiWorkers.size, 0);
+});
+
+
+test("Gemini preserves valid JSON field order, escapes and wrapped responses", async () => {
+    const expected = [{ id: "a", text: 'Quotes "hello", slash \u005c, newline\n tab\t and JSON {"id":"data"}' }, { id: "b", text: "second" }];
+    for (const reversed of [false, true]) {
+        for (const wrapped of [false, true]) {
+            const e = environment(); delete e.mocks["api/gemini.ts"];
+            const response = expected.map(row => reversed ? { text: row.text, id: row.id } : row);
+            const json = JSON.stringify(response), text = wrapped ? "Here is the result:\n" + json + "\nDone." : json;
+            e.native.batGeminiFetch = async () => ({ ok: true, data: JSON.stringify({ candidates: [{ content: { parts: [{ text }] } }] }) });
+            const actual = await e.load("api/gemini.ts").translateBatchWithGemini("123", [{ id: "a", text: "one" }, { id: "b", text: "two" }], "ko", "key", "", "model");
+            assert.deepEqual(actual, expected);
+        }
+    }
+});
+
+test("Gemini still repairs literal newlines and unescaped quotes in malformed JSON", async () => {
+    const e = environment(); delete e.mocks["api/gemini.ts"];
+    const text = '[{"id":"a","text":"line one\nHe said "hello"."}]';
+    e.native.batGeminiFetch = async () => ({ ok: true, data: JSON.stringify({ candidates: [{ content: { parts: [{ text }] } }] }) });
+    assert.deepEqual(await e.load("api/gemini.ts").translateBatchWithGemini("123", [{ id: "a", text: "original" }], "ko", "key", "", "model"),
+        [{ id: "a", text: 'line one\nHe said "hello".' }]);
+});
+
+test("channel deletion after a failed disk write cannot resurrect entries on the next save", async t => {
+    const e = environment(), files = new Map(), patches = []; let failRename = true;
+    e.mocks["fs/promises"] = {
+        readFile: async key => { if (!files.has(key)) throw Error("ENOENT"); return files.get(key); },
+        writeFile: async (key, value) => files.set(key, value),
+        rename: async (from, to) => { if (failRename) { failRename = false; throw Error("disk write failed"); } files.set(to, files.get(from)); files.delete(from); },
+        unlink: async key => files.delete(key)
+    };
+    const native = e.load("native.ts");
+    e.native.batCacheSave = patch => { patches.push(patch); return native.batCacheSave({}, patch); };
+    const quiet = t.mock.method(console, "error", () => {});
+    try {
+        const cache = e.load("utils/cache.ts").TranslationCache.getInstance();
+        cache.set("v3:123:deleted", "old translation", "gemini"); await cache.flush();
+        cache.clearChannel("123"); cache.set("v3:456:kept", "other translation", "gemini"); await cache.flush();
+        assert.equal(cache.peek("v3:123:deleted"), undefined);
+        assert.deepEqual(JSON.parse([...files.values()][0]).entries, { "v3:456:kept": "other translation" });
+        assert.ok(patches.some(patch => patch.entries.some(([key, value]) => key === "v3:123:deleted" && value === null)));
+        const reloaded = environment(); reloaded.native.batCacheLoad = () => native.batCacheLoad({});
+        const restored = reloaded.load("utils/cache.ts").TranslationCache.getInstance(); await restored.init();
+        assert.equal(restored.peek("v3:123:deleted"), undefined); assert.equal(restored.peek("v3:456:kept"), "other translation"); await restored.flush();
+    } finally { quiet.mock.restore(); }
+});
+
+test("eviction after a rejected save sends a deletion for the possibly applied entry", async () => {
+    const e = environment(), saved = new Map(), patches = []; let fail = true;
+    e.mocks["constants.ts"] = { CACHE_MAX_SIZE: 1000, CACHE_PERSISTENT_MAX_SIZE: 1, CACHE_SAVE_DEBOUNCE: 5000 };
+    e.native.batCacheSave = async patch => {
+        patches.push(patch); for (const [key, value] of patch.entries) value === null ? saved.delete(key) : saved.set(key, value);
+        if (fail) { fail = false; throw Error("IPC response lost"); } return true;
+    };
+    const cache = e.load("utils/cache.ts").TranslationCache.getInstance();
+    cache.set("v3:123:old", "old", "gemini"); await cache.flush();
+    cache.set("v3:123:new", "new", "gemini"); await cache.flush();
+    assert.deepEqual([...saved], [["v3:123:new", "new"]]);
+    assert.ok(patches[1].entries.some(([key, value]) => key === "v3:123:old" && value === null));
+});
+
+
+test("unchanged successful outgoing translations send the original without a preview or failure", async () => {
+    for (const engine of ["gemini", "deepseek"]) {
+        for (const preview of [false, true]) {
+            const e = environment({ translateOutgoing: true, previewOutgoing: preview, translationEngine: engine,
+                geminiApiKey: "key", deepseekApiKey: "key", channelList: [{ id: "123", lang: "ru" }] });
+            const original = "  Привет https://example.test  ", notices = [], actions = []; let cacheWrites = 0;
+            Object.assign(e.mocks["@webpack/common"], {
+                DraftType: { ChannelMessage: 0 }, DraftStore: { getDraft: () => original },
+                ComponentDispatch: { dispatchToLastSubscribed: (...args) => actions.push(args) }
+            });
+            e.mocks["utils/toast.ts"] = { showTranslationToast: text => notices.push(text) };
+            e.mocks["utils/cache.ts"] = { TranslationCache: { getInstance: () => ({ setOutgoing: () => { cacheWrites++; } }) } };
+            e.mocks["api/" + engine + ".ts"][engine === "gemini" ? "translateBatchWithGemini" : "translateBatchWithDeepSeek"] = async (_, messages) => messages.map(m => ({ id: m.id, text: m.text }));
+            const message = { content: original, attachments: [{ id: "file" }] };
+            assert.equal(await e.load("api/outgoing.ts").handleOutgoingTranslation("123", message, () => true), undefined);
+            assert.equal(message.content, original); assert.deepEqual(message.attachments, [{ id: "file" }]);
+            assert.deepEqual(notices, []); assert.deepEqual(actions, []); assert.equal(cacheWrites, 0);
+        }
+    }
+});
+
+test("unchanged responses remain hidden for reading; actual outgoing API errors still cancel sending", async () => {
+    const e = environment();
+    e.mocks["api/gemini.ts"].translateBatchWithGemini = async (_, messages) => messages.map(m => ({ id: m.id, text: m.text }));
+    const { safeTranslate } = e.load("api/translate.ts");
+    assert.equal(await safeTranslate("Привет", "auto", "ru", "gemini", { gemini: "key", deepseek: "" }, "123", ""), null);
+    const f = environment({ translateOutgoing: true, previewOutgoing: false, translationEngine: "gemini", geminiApiKey: "key", channelList: [{ id: "123", lang: "ru" }] });
+    Object.assign(f.mocks["@webpack/common"], { DraftType: { ChannelMessage: 0 }, DraftStore: { getDraft: () => "Привет" } });
+    const notices = []; f.mocks["utils/toast.ts"] = { showTranslationToast: text => notices.push(text) };
+    f.mocks["api/gemini.ts"].translateBatchWithGemini = async () => { throw Error("network failed"); };
+    const message = { content: "Привет" };
+    assert.deepEqual(await f.load("api/outgoing.ts").handleOutgoingTranslation("123", message, () => true), { cancel: true });
+    assert.equal(message.content, "Привет"); assert.equal(notices.length, 1);
+});
+
+
+test("language filtering admits supported scripts and ambiguous Latin text", () => {
+ const {shouldTranslate}=environment().load("utils/message.ts");
+ for(const [text,target] of [["مرحبا بك","ko"],["Καλημέρα","ko"],["Bonjour tout le monde","en"],["hello 안녕","ko"],["你好","ja"]]) assert.equal(shouldTranslate(text,target),true);
+ for(const text of ["12345","https://example.test","😀"]) assert.equal(shouldTranslate(text,"ko"),false);
+ assert.equal(shouldTranslate("안녕하세요","ko"),false);
+});
+test("literal placeholders survive token restoration without becoming links", async () => {
+ for(const engine of ["gemini","deepseek"]){
+ const e=environment(),{safeTranslate}=e.load("api/translate.ts");
+ const source="Keep [token0] and [token1] and [ TOKEN2 ] with https://example.test";
+ assert.equal(await safeTranslate(source,"auto","ko",engine,{gemini:"key",deepseek:"key"},"123",""),"translated:"+source);
+ }
+});
+
+
+test("appearance filters preserve code contents while removing outside mentions and emojis", async () => {
+ const e=environment({hideEmojis:true,hideMentions:true});
+ const source='Read '+String.fromCharCode(96)+'😀 <@123>'+String.fromCharCode(96)+' <@456> 😀';
+ const result=await e.load("api/translate.ts").safeTranslate(source,"auto","ko","gemini",{gemini:"key",deepseek:""},"123","");
+ assert.ok(result.includes(String.fromCharCode(96)+'😀 <@123>'+String.fromCharCode(96))); assert.equal(result.includes('<@456>'),false);
+});
+test("damaged protected tokens reject translations instead of silently losing or duplicating links", async () => {
+ for(const response of ['translated','translated [token0] [token0]','translated [token9]']){
+ const e=environment(); e.mocks['api/gemini.ts'].translateBatchWithGemini=async(_,messages)=>messages.map(m=>({id:m.id,text:response}));
+ await assert.rejects(e.load('api/translate.ts').safeTranslate('Visit https://example.test','auto','ko','gemini',{gemini:'key',deepseek:''},'123',''),/protected content/);
+ }
+});
+test("toast deduplication stays bounded while retaining recent repeats", () => {
+ const e=environment(), shown=[]; delete e.mocks['api/breaker.ts']; e.mocks['utils/toast.ts']={showTranslationToast:text=>shown.push(text)};
+ const {showApiToast}=e.load('api/breaker.ts');
+ for(let i=0;i<101;i++)showApiToast('gemini','error '+i);
+ showApiToast('gemini','error 100'); assert.equal(shown.length,101);
+ showApiToast('gemini','error 0'); assert.equal(shown.length,102);
+});
+
+
+test("500 discarded previews leave no draft listeners; expiry and stop detach monitoring", async t => {
+ t.mock.timers.enable({apis:["setTimeout","Date"],now:Date.now()});
+ const e=outgoingEnvironment(),listeners=new Set();
+ Object.assign(e.mocks['@webpack/common'].DraftStore,{addChangeListener:fn=>listeners.add(fn),removeChangeListener:fn=>listeners.delete(fn)});
+ e.pending.resolve('Hello');
+ for(let i=0;i<500;i++){
+ e.edit('안녕하세요');await e.handleOutgoingTranslation('123',{content:'안녕하세요'},()=>true);t.mock.timers.tick(1);
+ assert.equal(listeners.size,1);e.edit('');for(const fn of [...listeners])fn();assert.equal(listeners.size,0);
+ }
+ e.edit('안녕하세요');await e.handleOutgoingTranslation('123',{content:'안녕하세요'},()=>true);t.mock.timers.tick(1);
+ t.mock.timers.tick(600000);assert.equal(listeners.size,0);
+ e.edit('안녕하세요');await e.handleOutgoingTranslation('123',{content:'안녕하세요'},()=>true);t.mock.timers.tick(1);
+ e.resetOutgoingTranslations();assert.equal(listeners.size,0);t.mock.timers.tick(600000);assert.equal(listeners.size,0);
+});
+test("generation tracking releases 5000 channels and never revives invalidated requests", async () => {
+ const cache=environment().load('utils/cache.ts').TranslationCache.getInstance();
+ for(let i=0;i<5000;i++){
+ const key='v3:'+i+':key',old=cache.watchGeneration(key);cache.clearChannel(String(i));
+ const next=cache.watchGeneration(key);assert.equal(old.isCurrent(),false);old.release();assert.equal(next.isCurrent(),true);next.release();
+ }
+ assert.equal(cache.channelGenerations.size,0);
+ const old=cache.watchGeneration('v3:1:key');cache.clearAll();const next=cache.watchGeneration('v3:1:key');old.release();
+ assert.equal(old.isCurrent(),false);assert.equal(next.isCurrent(),true);next.release();assert.equal(cache.channelGenerations.size,0);await cache.flush();
+});
+
+
+test("outgoing reset cancels pending results even before the caller lifecycle changes", async () => {
+ const e=outgoingEnvironment(),message={content:'안녕하세요'};
+ e.store.previewOutgoing=false;const result=e.handleOutgoingTranslation('123',message,()=>true);
+ e.resetOutgoingTranslations();e.pending.resolve('Hello');
+ assert.deepEqual(await result,{cancel:true});assert.equal(message.content,'안녕하세요');assert.deepEqual(e.notices,[]);
+});
+test("outgoing reset clears deferred preview insertions", async t => {
+ t.mock.timers.enable({apis:['setTimeout']});const e=outgoingEnvironment();
+ const result=e.handleOutgoingTranslation('123',{content:'안녕하세요'},()=>true);e.pending.resolve('Hello');await result;
+ e.resetOutgoingTranslations();t.mock.timers.tick(1);assert.deepEqual(e.actions,[]);
+});
+
+
+test("1000 mixed cache writes, deletions and save failures converge without stale entries", async () => {
+ const e=environment(),stored=new Map();let writes=0,recovered=false;
+ e.mocks['constants.ts']={CACHE_MAX_SIZE:1000,CACHE_PERSISTENT_MAX_SIZE:8,CACHE_SAVE_DEBOUNCE:5000};
+ e.native.batCacheSave=async patch=>{
+ if(patch.clear)stored.clear();for(const [key,value]of patch.entries)value===null?stored.delete(key):stored.set(key,value);
+ return recovered||++writes%4!==0;
+ };
+ const cache=e.load('utils/cache.ts').TranslationCache.getInstance();let seed=12345;
+ for(let i=0;i<1000;i++){
+ seed=(Math.imul(seed,1664525)+1013904223)>>>0;const channel=String(seed%5),key='v3:'+channel+':'+(seed%17);
+ if(seed%19===0)cache.clearAll();else if(seed%7===0)cache.clearChannel(channel);else cache.set(key,'value '+i,'gemini');
+ if(i%3===0)await cache.flush();
+ }
+ recovered=true;await cache.flush();
+ assert.deepEqual([...stored].sort(),[...cache.persistentCache].map(([key,entry])=>[key,entry.value]).sort());
+ assert.equal(cache.changes.size,0);assert.equal(cache.inFlightKeys.size,0);assert.equal(cache.saveTimeout,null);
 });

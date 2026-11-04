@@ -90,7 +90,7 @@ export function useTranslationExecution({
             inFlight.current = true;
 
             const cache = TranslationCache.getInstance();
-            const generation = cache.getGeneration(cacheKey);
+            const generation = cache.watchGeneration(cacheKey);
             let promise = cache.getPending(cacheKey, content);
             if (!promise) {
                 promise = safeTranslate(
@@ -108,7 +108,7 @@ export function useTranslationExecution({
             setIsTranslating(true);
             try {
                 const result = await promise;
-                if (cache.getGeneration(cacheKey) !== generation) return;
+                if (!generation.isCurrent()) return;
                 if (result) cache.set(cacheKey, result, currentEngine);
                 if (!cancelled) {
                     if (result) cache.rememberDisplayed(channelId, messageId, content, resolvedTarget, cacheKey);
@@ -116,8 +116,9 @@ export function useTranslationExecution({
                 }
             } catch (e) {
                 Logger.warn("Translate", "Translation request failed", e);
-                if (!cancelled && cache.getGeneration(cacheKey) === generation) setFailure({ key: requestKey, message: e instanceof Error ? e.message : "Translation failed" });
+                if (!cancelled && generation.isCurrent()) setFailure({ key: requestKey, message: e instanceof Error ? e.message : "Translation failed" });
             } finally {
+                generation.release();
                 if (!cancelled) {
                     inFlight.current = false;
                     setIsTranslating(false);

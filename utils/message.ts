@@ -20,26 +20,11 @@ export function shouldTranslate(content: string, targetLang: string): boolean {
         .replace(/[ \t]+/g, " ")
         .trim();
 
-    if (!detectionText || !detectionText.match(/[a-zA-Z0-9\u00C0-\u024F\uAC00-\uD7A3\u3040-\u30FF\u4E00-\u9FFF\u0400-\u04FF]/)) {
-        return false;
-    }
-
-    const resolvedTargetLang = targetLang === "auto" ? document.documentElement.lang.split("-")[0] : targetLang;
-
-    if (resolvedTargetLang === "ko") {
-        // 초단순화 최적화: 메시지에 한글이 단 하나라도 섞여있으면 무조건 번역을 생략합니다.
-        const hasKorean = /[\uAC00-\uD7A3]/.test(detectionText);
-        if (hasKorean) return false;
-
-        const hasForeign = /[a-zA-Z\u00C0-\u024F\u3040-\u30FF\u4E00-\u9FFF\u0400-\u04FF]/.test(detectionText);
-        if (!hasForeign) return false;
-    } else if (resolvedTargetLang === "en") {
-        const hasForeign = /[\uAC00-\uD7A3\u3040-\u30FF\u4E00-\u9FFF\u0400-\u04FF]/.test(detectionText);
-        if (!hasForeign) return false;
-    } else if (resolvedTargetLang === "ja") {
-        const hasForeign = /[a-zA-Z\u00C0-\u024F\uAC00-\uD7A3\u0400-\u04FF]/.test(detectionText);
-        if (!hasForeign) return false;
-    }
-
+    if (!/\p{L}/u.test(detectionText)) return false;
+    const target = targetLang === "auto" ? document.documentElement.lang.split("-")[0] : targetLang;
+    const letters = detectionText.replace(/[^\p{L}]/gu, "");
+    if (target === "ko" && /^[\p{Script=Hangul}]+$/u.test(letters)) return false;
+    if (target === "ja" && /[\p{Script=Hiragana}\p{Script=Katakana}]/u.test(letters) &&
+        /^[\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Han}]+$/u.test(letters)) return false;
     return true;
 }

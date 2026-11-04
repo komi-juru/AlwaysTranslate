@@ -22,7 +22,9 @@ function shouldShowToast(key: string, cooldown = TOAST_DEDUP_WINDOW_MS) {
         return false;
     }
 
+    recentToasts.delete(key);
     recentToasts.set(key, now);
+    if (recentToasts.size > 100) recentToasts.delete(recentToasts.keys().next().value!);
     return true;
 }
 
