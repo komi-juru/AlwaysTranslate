@@ -70,15 +70,6 @@ Configure your API key in the plugin settings.
 This plugin does not collect personal data. However, messages are sent to your chosen AI API; please use caution in channels with sensitive information.
 > **Disclaimer:** This plugin is not officially supported by Vencord.
 
-## Translation deadlines and errors
-
-Translation jobs have a **20-second total deadline**, including batching and queue waits.
-On timeout the loading state ends, a notification appears, and expired work is discarded.
-Idle workers cancel their active HTTP request; late results cannot replace a timed-out translation.
-This also applies to outgoing and manual translation. Economy mode releases a batch after at most 10 seconds so the API has time to respond.
-
-API errors distinguish missing/invalid keys, denied permissions, insufficient balance, missing models/endpoints, quota, rate limits, server/network failures, blocked content and invalid responses.
-
 ## Development checks
 
 From the Vencord repository root, after installing dependencies:
