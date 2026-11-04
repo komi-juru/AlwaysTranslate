@@ -59,7 +59,6 @@ pnpm build
 
 Configure your API key in the plugin settings.
 
-- **DeepL** – https://app.deepl.com/your-account/keys
 - **Gemini** – https://aistudio.google.com/api-keys
 - **DeepSeek** – https://platform.deepseek.com/
 

@@ -73,7 +73,7 @@ function classifyGeminiQuota(rawText: string, errData: any): GeminiQuotaKind | n
 
 
 // --- Helper: Unified API Fetch & Error Handling ---
-async function fetchGeminiAPI(payload: any, engine: string, apiKey: string, signal?: AbortSignal): Promise<any> {
+export async function fetchGeminiAPI(payload: any, engine: string, apiKey: string, signal?: AbortSignal): Promise<any> {
     if (!apiKey) throw new Error("Gemini API Key is missing.");
 
     const apiUrl = getApiUrl(engine);

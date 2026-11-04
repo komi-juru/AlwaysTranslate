@@ -29,25 +29,24 @@ test("indefinite economy mode dispatches after 10 seconds", async t => {
     t.mock.timers.enable({ apis: ["setTimeout"] });
     const e = environment(); let calls = 0;
     e.mocks["api/gemini.ts"].translateBatchWithGemini = async () => { calls++; return [{ id: "deadline", text: "translated" }]; };
-    const { GeminiChannelWorker, geminiWorkers } = e.load("api/worker.ts");
-    const worker = new GeminiChannelWorker("123"); geminiWorkers.set("123", worker);
+    const { AiChannelWorker, aiWorkers } = e.load("api/worker.ts");
+    const worker = new AiChannelWorker("123"); aiWorkers.set("123", worker);
     const job = task("deadline"); worker.enqueue(job);
     t.mock.timers.tick(9999); assert.equal(worker.registry.size, 1);
     assert.equal(calls, 0); t.mock.timers.tick(2); assert.equal(await job.result, "translated"); await tick();
-    assert.equal(worker.registry.size, 0); assert.equal(geminiWorkers.size, 0); assert.equal(calls, 1);
+    assert.equal(worker.registry.size, 0); assert.equal(aiWorkers.size, 0); assert.equal(calls, 1);
 });
 
-test("hung AI and DeepL requests abort at the task deadline and ignore late completion", async t => {
+test("hung AI requests abort at the task deadline and ignore late completion", async t => {
     t.mock.timers.enable({ apis: ["setTimeout"] });
-    for (const engine of ["gemini", "deepl"]) {
+    for (const engine of ["gemini", "deepseek"]) {
         const e = environment(); const pending = deferred(); let signal;
-        if (engine === "gemini") e.mocks["api/gemini.ts"].translateBatchWithGemini = (...args) => { signal = args[6]; return pending.promise; };
-        else e.mocks["api/deepl.ts"].translateWithDeepL = (...args) => { signal = args[4]; return pending.promise; };
+        e.mocks["api/" + engine + ".ts"][engine === "gemini" ? "translateBatchWithGemini" : "translateBatchWithDeepSeek"] = (...args) => { signal = args[6]; return pending.promise; };
         const workers = e.load("api/worker.ts");
-        const worker = engine === "gemini" ? new workers.GeminiChannelWorker("123") : new workers.DeeplChannelWorker("deepl|||auto|||ko|||key");
-        const job = task(engine); worker.enqueue(job); worker.flushNow(); await tick();
+        const worker = new workers.AiChannelWorker("123");
+        const job = task(engine); job.engine = engine; worker.enqueue(job); worker.flushNow(); await tick();
         t.mock.timers.tick(20000); assert.equal(await job.result, ""); assert.ok(signal.aborted);
-        pending.resolve(engine === "gemini" ? [{ id: engine, text: "late" }] : ["late"]);
+        pending.resolve([{ id: engine, text: "late" }]);
         await tick(); assert.equal(worker.registry.size, 0); assert.equal(worker.state, "IDLE");
     }
 });
@@ -73,7 +72,6 @@ function environment(extra = {}) {
         "api/breaker.ts": { APIBreaker: { reportError: () => false }, getGeminiActiveQuotaLock: () => null, showApiToast() {}, setGeminiQuotaLock() {}, showGeminiQuotaToast() {} },
         "api/gemini.ts": { translateBatchWithGemini: async (_, messages) => messages.map(m => ({ id: m.id, text: "translated:" + m.text })) },
         "api/deepseek.ts": { translateBatchWithDeepSeek: async (_, messages) => messages.map(m => ({ id: m.id, text: "translated:" + m.text })) },
-        "api/deepl.ts": { translateWithDeepL: async texts => texts.map(t => "translated:" + t) },
         "@webpack/common": {},
         "electron": { app: { getPath: () => "/unused" } }
     };
@@ -85,7 +83,7 @@ function environment(extra = {}) {
         if (modules.has(file)) return modules.get(file).exports;
         const module = { exports: {} }; modules.set(file, module);
         const filename = path.join(root, file);
-        const code = ts.transpileModule(fs.readFileSync(filename, "utf8"), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, esModuleInterop: true } }).outputText;
+        const code = ts.transpileModule(fs.readFileSync(filename, "utf8"), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX, esModuleInterop: true } }).outputText;
         function localRequire(id) {
             if (mocks[id]) return mocks[id];
             if (!id.startsWith(".")) return require(id);
@@ -104,32 +102,9 @@ function task(id, text = id, messageId = "123456789012345678") {
     return { id, text, messageId, channelId: "123", targetLang: "ko", apiKey: "key", engine: "gemini", dmPrompt: "", resolve: result.resolve, result: result.promise };
 }
 
-test("DeepL clears successful and failed tasks", async () => {
-    for (const fail of [false, true]) {
-        const e = environment();
-        if (fail) e.mocks["api/deepl.ts"].translateWithDeepL = async () => { throw Error("network"); };
-        const { DeeplChannelWorker, deeplWorkers } = e.load("api/worker.ts");
-        const w = new DeeplChannelWorker("deepl|||auto|||ko|||key"); deeplWorkers.set(w.key, w);
-        const t = task("unique-id"); w.enqueue(t); w.flushNow();
-        assert.equal(await t.result, fail ? "" : "translated:unique-id");
-        await tick(); assert.equal(w.registry.size, 0); assert.equal(deeplWorkers.size, 0);
-    }
-});
-
-test("DeepL serializes arrivals during a running request", async () => {
-    const e = environment(); const first = deferred(); let calls = 0;
-    e.mocks["api/deepl.ts"].translateWithDeepL = async texts => { calls++; return calls === 1 ? first.promise : texts; };
-    const { DeeplChannelWorker } = e.load("api/worker.ts");
-    const w = new DeeplChannelWorker("deepl|||auto|||ko|||key");
-    const a = task("a"), b = task("b"); w.enqueue(a); w.flushNow(); w.enqueue(b); w.flushNow();
-    assert.equal(w.state, "PROCESSING"); assert.equal(calls, 1);
-    first.resolve(["first"]); await a.result; await tick(); w.flushNow();
-    assert.equal(await b.result, "b"); assert.equal(calls, 2); assert.equal(w.registry.size, 0);
-});
-
 test("AI requests sharing a message ID, including outgoing messages, all settle", async () => {
-    const e = environment(); const { GeminiChannelWorker } = e.load("api/worker.ts");
-    const w = new GeminiChannelWorker("123");
+    const e = environment(); const { AiChannelWorker } = e.load("api/worker.ts");
+    const w = new AiChannelWorker("123");
     const tasks = [task("a"), task("b"), task("c", "outgoing", ""), task("d", "another", "")];
     tasks.forEach(t => w.enqueue(t)); w.flushNow();
     assert.deepEqual(await Promise.all(tasks.map(t => t.result)), tasks.map(t => "translated:" + t.text));
@@ -139,10 +114,10 @@ test("AI requests sharing a message ID, including outgoing messages, all settle"
 test("reset cancels a worker waiting for a request slot without sending", async () => {
     const e = environment(); let calls = 0;
     e.mocks["api/gemini.ts"].translateBatchWithGemini = async () => { calls++; return []; };
-    const { GeminiChannelWorker } = e.load("api/worker.ts");
+    const { AiChannelWorker } = e.load("api/worker.ts");
     const { aiRequestLimiters } = e.load("api/requestLimiter.ts");
     const releases = await Promise.all([aiRequestLimiters.gemini.acquire(), aiRequestLimiters.gemini.acquire()]);
-    const w = new GeminiChannelWorker("123"); const t = task("a"); w.enqueue(t); w.flushNow(); w.reset(); releases.forEach(release => release());
+    const w = new AiChannelWorker("123"); const t = task("a"); w.enqueue(t); w.flushNow(); w.reset(); releases.forEach(release => release());
     assert.equal(await t.result, ""); await tick(); assert.equal(calls, 0);
 });
 
@@ -150,8 +125,8 @@ test("reset aborts an active request and suppresses remaining chunks", async () 
     const e = environment(); e.mocks["constants.ts"] = { GEMINI_BATCH_SIZE: 1, BATCH_ACCUMULATION_TIME_GEMINI: 200 };
     let signal, calls = 0;
     e.mocks["api/gemini.ts"].translateBatchWithGemini = async (...args) => { calls++; signal = args[6]; return new Promise(() => {}); };
-    const { GeminiChannelWorker } = e.load("api/worker.ts");
-    const w = new GeminiChannelWorker("123"); const a = task("a"), b = task("b"); w.enqueue(a); w.enqueue(b); w.flushNow();
+    const { AiChannelWorker } = e.load("api/worker.ts");
+    const w = new AiChannelWorker("123"); const a = task("a"), b = task("b"); w.enqueue(a); w.enqueue(b); w.flushNow();
     await tick(); w.reset(); assert.equal(signal.aborted, true);
     assert.deepEqual(await Promise.all([a.result, b.result]), ["", ""]); await tick(); assert.equal(calls, 1);
 });
@@ -166,9 +141,9 @@ test("cache keys isolate engines, channels, models, prompts, source language and
     e.store.hideEmojis = true; assert.notEqual(original, key());
 });
 
-test("channel clear removes AI, DeepL, outgoing and pending entries without affecting other channels", async () => {
+test("channel clear removes AI, outgoing and pending entries without affecting other channels", async () => {
     const e = environment(); const cache = e.load("utils/cache.ts").TranslationCache.getInstance();
-    cache.set("v3:1:ai", "AI", "gemini"); cache.set("v3:1:deepl", "DeepL", "deepl"); cache.set("v3:2:ai", "Other", "gemini");
+    cache.set("v3:1:ai", "AI", "gemini"); cache.set("v3:1:deepseek", "DeepSeek", "deepseek"); cache.set("v3:2:ai", "Other", "gemini");
     cache.setOutgoing("1", "sent", "original"); cache.setOutgoing("2", "sent", "other original");
     cache.setPending("v3:1:pending", "source", Promise.resolve("result"));
     const generation = cache.getGeneration("v3:1:ai"), otherGeneration = cache.getGeneration("v3:2:ai");
@@ -219,9 +194,9 @@ test("queued requests retain their model and complete custom prompt after settin
     const e = environment({ channelList: [{ id: "123", aiCustomPrompt: "formal|||keep names" }] }); let received;
     e.mocks["api/gemini.ts"].translateBatchWithGemini = async (...args) => { received = args; return args[1].map(m => ({ id: m.id, text: "result" })); };
     const { translate } = e.load("api/translate.ts");
-    const result = translate("123", "123456789012345678", "hello", "auto", "ko", "gemini", { gemini: "key", deepl: "", deepseek: "" });
+    const result = translate("123", "123456789012345678", "hello", "auto", "ko", "gemini", { gemini: "key", deepseek: "" });
     e.store.geminiModel = "changed-model";
-    e.load("api/worker.ts").geminiWorkers.get("123").flushNow();
+    e.load("api/worker.ts").aiWorkers.get("123").flushNow();
     assert.equal(await result, "result"); assert.equal(received[4], "formal|||keep names"); assert.equal(received[5], "gemini-a");
 });
 
@@ -237,8 +212,8 @@ test("incoming and outgoing prompts stay separate across channels, including bla
     };
     const { translate } = e.load("api/translate.ts");
     for (const channel of e.store.channelList) {
-        await translate(channel.id, "", "hello", "auto", "ko", "gemini", { gemini: "key", deepl: "", deepseek: "" });
-        await translate(channel.id, "", "hello", "auto", "en", "gemini", { gemini: "key", deepl: "", deepseek: "" }, false, channel.outgoingCustomPrompt);
+        await translate(channel.id, "", "hello", "auto", "ko", "gemini", { gemini: "key", deepseek: "" });
+        await translate(channel.id, "", "hello", "auto", "en", "gemini", { gemini: "key", deepseek: "" }, channel.outgoingCustomPrompt);
     }
     assert.deepEqual(received, ["incoming A", "outgoing A", "incoming B", ""]);
 });
@@ -261,25 +236,22 @@ test("translation ignores legacy glossary settings and preserves tokens and cust
         received.push({ text: args[1][0].text, prompt: args[4] });
         return args[1].map(m => ({ id: m.id, text: "translated:" + m.text }));
     };
-    e.mocks["api/deepl.ts"].translateWithDeepL = async texts => {
-        received.push({ text: texts[0] });
-        return texts.map(text => "translated:" + text);
-    };
+    e.mocks["api/deepseek.ts"].translateBatchWithDeepSeek = e.mocks["api/gemini.ts"].translateBatchWithGemini;
     const { safeTranslate } = e.load("api/translate.ts");
     const text = "hello <@123> https://example.test \u0060code\u0060";
-    for (const engine of ["gemini", "deepl"]) {
-        assert.equal(await safeTranslate(text, "auto", "ko", engine, { gemini: "key", deepl: "key", deepseek: "" }, "123", "", false, "keep tone"), "translated:" + text);
+    for (const engine of ["gemini", "deepseek"]) {
+        assert.equal(await safeTranslate(text, "auto", "ko", engine, { gemini: "key", deepseek: "" }, "123", "", "keep tone"), "translated:" + text);
     }
     assert.deepEqual(received, [
         { text: "hello [token0] [token1] [token2]", prompt: "keep tone" },
-        { text: "hello [token0] [token1] [token2]" }
+        { text: "hello [token0] [token1] [token2]", prompt: "keep tone" }
     ]);
 });
 
 
 test("AI engines have separate bounded concurrency and cancelled waiters release their place", async () => {
     const e = environment();
-    const { GeminiChannelWorker } = e.load("api/worker.ts");
+    const { AiChannelWorker } = e.load("api/worker.ts");
     const held = deferred(); let geminiActive = 0, peak = 0, deepseekCalls = 0;
     e.mocks["api/gemini.ts"].translateBatchWithGemini = async (_, messages) => {
         peak = Math.max(peak, ++geminiActive); await held.promise; geminiActive--;
@@ -288,11 +260,11 @@ test("AI engines have separate bounded concurrency and cancelled waiters release
     e.mocks["api/deepseek.ts"].translateBatchWithDeepSeek = async (_, messages) => {
         deepseekCalls++; return messages.map(m => ({ id: m.id, text: "independent" }));
     };
-    const workers = ["1", "2", "3", "4"].map(id => new GeminiChannelWorker(id));
+    const workers = ["1", "2", "3", "4"].map(id => new AiChannelWorker(id));
     const jobs = workers.map((w, i) => { const job = task("job" + i); w.enqueue(job); w.flushNow(); return job; });
     await tick(); assert.equal(geminiActive, 2);
     workers[2].reset(); assert.equal(await jobs[2].result, "");
-    const separate = new GeminiChannelWorker("5"), other = task("deepseek"); other.engine = "deepseek";
+    const separate = new AiChannelWorker("5"), other = task("deepseek"); other.engine = "deepseek";
     separate.enqueue(other); separate.flushNow(); assert.equal(await other.result, "independent"); assert.equal(deepseekCalls, 1);
     held.resolve(); assert.deepEqual(await Promise.all(jobs.map(j => j.result)), ["done", "done", "", "done"]);
     assert.equal(peak, 2); await tick(); assert.equal(geminiActive, 0);
@@ -325,9 +297,9 @@ test("AI APIs reject missing, duplicate, unknown and malformed translation entri
 });
 
 function outgoingEnvironment() {
-    const e = environment({ translateOutgoing: true, previewOutgoing: true, targetLang: "en", translationEngine: "gemini" });
+    const e = environment({ translateOutgoing: true, previewOutgoing: true, targetLang: "ko", translationEngine: "gemini", channelList: [{ id: "123", lang: "en" }] });
     let selected = "123", draft = "안녕하세요", calls = 0, notices = [];
-    const actions = [], pending = deferred();
+    const actions = [], requests = [], pending = deferred();
     Object.assign(e.mocks["@webpack/common"], {
         SelectedChannelStore: { getChannelId: () => selected },
         DraftType: { ChannelMessage: 0 }, DraftStore: { getDraft: () => draft },
@@ -336,11 +308,11 @@ function outgoingEnvironment() {
             actions.push([event, data]); draft = event === "CLEAR_TEXT" ? "" : draft + data.rawText;
         } }
     });
-    e.mocks["api/translate.ts"] = { safeTranslate: () => { calls++; return pending.promise; } };
+    e.mocks["api/translate.ts"] = { safeTranslate: (...args) => { calls++; requests.push(args); return pending.promise; } };
     e.mocks["utils/toast.ts"] = { showTranslationToast: text => notices.push(text) };
     e.mocks["utils/cache.ts"] = { TranslationCache: { getInstance: () => ({ setOutgoing() {} }) } };
     const handler = e.load("api/outgoing.ts");
-    return { ...e, ...handler, pending, actions, notices, get draft() { return draft; }, get calls() { return calls; },
+    return { ...e, ...handler, pending, actions, requests, notices, get draft() { return draft; }, get calls() { return calls; },
         select: channel => { selected = channel; }, edit: text => { draft = text; } };
 }
 
@@ -383,4 +355,197 @@ test("outgoing translation cancels on failure or stop; preview-off replaces text
         assert.deepEqual(await result, mode === "send" ? undefined : { cancel: true });
         assert.equal(message.content, mode === "send" ? "Hello" : "안녕하세요");
     }
+});
+
+
+test("automatic rendering follows channel engines and scope and retains own outgoing originals", () => {
+    const e = environment({ translationEngine: "deepseek", targetLang: "ko", skipOwnMessages: true,
+        manualTranslationEngine: "gemini", channelList: [] });
+    let execution, allowed = true, engine;
+    e.mocks["settings.ts"].settings.use = () => e.store;
+    e.mocks["settings.ts"].getChannelConfig = () => ({ allowed, config: engine ? { engine } : null });
+    e.mocks["@components/ErrorBoundary"] = { wrap: fn => fn };
+    e.mocks["@webpack"] = { findCssClassesLazy: () => ({ markup: "markup" }) };
+    e.mocks["react/jsx-runtime"] = { jsx: (type, props) => ({ type, props }), jsxs: (type, props) => ({ type, props }) };
+    e.mocks["@webpack/common"].UserStore = { getCurrentUser: () => ({ id: "me" }) };
+    e.mocks["@webpack/common"].Parser = { parse: text => text };
+    e.mocks["index.ts"] = { pluginStarted: true };
+    e.mocks["components/LoadingIndicator.ts"] = { LoadingIndicator() {} };
+    e.mocks["hooks/useMessageVisibility.ts"] = { useMessageVisibility() {} };
+    e.mocks["hooks/useTranslationExecution.ts"] = { useTranslationExecution: props => {
+        execution = props; return { translatedText: props.cachedTranslated ?? "translated", isTranslating: false };
+    } };
+    e.mocks["utils/cache.ts"] = { TranslationCache: { getInstance: () => ({
+        peek: key => key.includes('"gemini"') ? "old manual translation" : undefined,
+        getOutgoing: () => "my original message"
+    }) } };
+    const { TranslationAccessory } = e.load("components/TranslationAccessory.tsx");
+    const message = { id: "123456789012345678", channel_id: "123", content: "hello", author: { id: "other" } };
+    assert.ok(TranslationAccessory({ message })); assert.equal(execution.currentEngine, "deepseek"); assert.equal(execution.cachedTranslated, undefined);
+    engine = "gemini"; TranslationAccessory({ message }); assert.equal(execution.currentEngine, "gemini");
+    engine = "default"; TranslationAccessory({ message }); assert.equal(execution.currentEngine, "deepseek");
+    engine = "disable"; assert.equal(TranslationAccessory({ message }), null);
+    engine = "deepseek"; allowed = false; assert.equal(TranslationAccessory({ message }), null); assert.equal(execution.allowed, false);
+    allowed = true; message.author.id = "me"; assert.ok(TranslationAccessory({ message }));
+    assert.equal(execution.skipMessage, true); assert.equal(execution.cachedTranslated, "my original message");
+});
+
+test("automatic execution skips excluded channels and disabled engines and shares pending work", async () => {
+    for (const mode of ["excluded", "disabled", "pending", "translate"]) {
+        const e = environment(); const effects = [], writes = [], states = [];
+        let calls = 0;
+        const result = deferred();
+        e.mocks["@webpack/common"].useState = value => [value, next => states.push(next)];
+        e.mocks["@webpack/common"].useEffect = fn => effects.push(fn);
+        e.mocks["api/translate.ts"] = { safeTranslate: () => { calls++; return result.promise; } };
+        e.mocks["utils/cache.ts"] = { TranslationCache: { getInstance: () => ({
+            getGeneration: () => "0", getPending: () => mode === "pending" ? result.promise : undefined,
+            setPending() {}, set: (...args) => writes.push(args)
+        }) } };
+        const { useTranslationExecution } = e.load("hooks/useTranslationExecution.ts");
+        useTranslationExecution({ messageId: "123456789012345678", channelId: "123", content: "hello", cacheKey: "key",
+            currentEngine: mode === "disabled" ? "disable" : "gemini", sourceLang: "auto", resolvedTarget: "ko",
+            shouldTranslateContent: true, allowed: mode !== "excluded", skipMessage: false, cachedTranslated: undefined, cacheRevision: 0 });
+        effects.forEach(fn => fn());
+        assert.equal(calls, mode === "translate" ? 1 : 0);
+        result.resolve("translated"); await tick();
+        assert.equal(writes.length, ["pending", "translate"].includes(mode) ? 1 : 0);
+        if (writes.length) assert.ok(states.includes("translated"));
+    }
+});
+
+
+function languageEnvironment() {
+    const e = environment({ geminiApiKey: "gemini-key", deepseekApiKey: "deepseek-key" });
+    const messages = { _array: [], _after: { _messages: [] }, hasMoreAfter: false };
+    e.mocks["@webpack/common"].MessageStore = { getMessages: channel => { assert.equal(channel, "123"); return messages; } };
+    e.mocks["@webpack/common"].UserStore = { getCurrentUser: () => ({ id: "me" }) };
+    return { ...e, messages };
+}
+
+test("Auto language sample picks the newest meaningful message from another person", () => {
+    const e = languageEnvironment();
+    const message = (id, content, author = { id: "other" }, type = 0) => ({ id, content, author, type });
+    e.messages._array = [message("100", "古いメッセージ"), message("600", "my own text", { id: "me" }),
+        message("200", "最近のメッセージ"), message("300", "https://example.test <@123> 😀"),
+        message("400", "system notice", { id: "other" }, 7), message("500", "bot message", { id: "bot", bot: true }),
+        message("700", "\u0060\u0060\u0060const example = true;\u0060\u0060\u0060")];
+    const { getRecentLanguageSample } = e.load("api/detectLanguage.ts");
+    assert.deepEqual(getRecentLanguageSample("123"), { id: "200", text: "最近のメッセージ" });
+    e.messages._after._messages.push(message("800", "最新の返信", { id: "other" }, 19));
+    assert.equal(getRecentLanguageSample("123").id, "800");
+    e.messages.hasMoreAfter = true; assert.equal(getRecentLanguageSample("123"), null);
+    e.messages.hasMoreAfter = false; e.messages._array = []; e.messages._after._messages = [];
+    assert.equal(getRecentLanguageSample("123"), null);
+});
+
+test("Auto language detection supports all engines and reuses only the current sample", async () => {
+    for (const engine of ["gemini", "deepseek"]) {
+        const e = languageEnvironment(); let calls = 0;
+        e.messages._array = [{ id: "100", content: "こんにちは、元気ですか", author: { id: "other" } }];
+        e.mocks["api/gemini.ts"].fetchGeminiAPI = async payload => {
+            calls++; assert.match(payload.contents[0].parts[0].text, /こんにちは/);
+            return JSON.stringify({ language: "ja", confident: true });
+        };
+        e.native.batDeepSeekFetch = async () => {
+            calls++; return { ok: true, data: JSON.stringify({ choices: [{ message: { content: '{"language":"ja","confident":true}' } }] }) };
+        };
+        const { detectOutgoingLanguage, clearDetectedLanguages } = e.load("api/detectLanguage.ts");
+        const signal = new AbortController().signal;
+        assert.equal(await detectOutgoingLanguage("123", engine, signal), "ja");
+        assert.equal(await detectOutgoingLanguage("123", engine, signal), "ja"); assert.equal(calls, 1);
+        e.messages._array[0].content += "？";
+        assert.equal(await detectOutgoingLanguage("123", engine, signal), "ja"); assert.equal(calls, 2);
+        clearDetectedLanguages(); assert.equal(await detectOutgoingLanguage("123", engine, signal), "ja"); assert.equal(calls, 3);
+    }
+});
+
+test("Auto detection rejects uncertain and unsupported languages and normalizes supported codes", async () => {
+    const e = languageEnvironment(); let response;
+    e.messages._array = [{ id: "100", content: "some words", author: { id: "other" } }];
+    e.mocks["api/gemini.ts"].fetchGeminiAPI = async () => JSON.stringify(response);
+    const { detectOutgoingLanguage, clearDetectedLanguages } = e.load("api/detectLanguage.ts");
+    for (const [language, confident, expected] of [["en", false, null], ["unknown", true, null], ["xx", true, null],
+        [123, true, null], ["EN-US", true, "en"], ["ZH", true, "zh-CN"], ["zh-TW", true, "zh-TW"]]) {
+        clearDetectedLanguages(); response = { language, confident };
+        assert.equal(await detectOutgoingLanguage("123", "gemini", new AbortController().signal), expected);
+    }
+});
+
+test("Auto outgoing targets the detected language instead of the reading language", async () => {
+    const e = outgoingEnvironment(); e.store.previewOutgoing = false; e.store.channelList[0].lang = "auto";
+    let detected = 0;
+    e.load("api/detectLanguage.ts").detectOutgoingLanguage = async (channel, engine) => {
+        detected++; assert.equal(channel, "123"); assert.equal(engine, "gemini"); return "ja";
+    };
+    const message = { content: "안녕하세요" };
+    const sending = e.handleOutgoingTranslation("123", message, () => true); await tick();
+    assert.equal(e.requests[0][2], "ja"); e.pending.resolve("こんにちは");
+    assert.equal(await sending, undefined); assert.equal(message.content, "こんにちは"); assert.equal(detected, 1);
+});
+
+test("Auto outgoing blocks an undetected language; explicit languages bypass detection", async () => {
+    const e = outgoingEnvironment(); let detected = 0;
+    e.load("api/detectLanguage.ts").detectOutgoingLanguage = async () => { detected++; return null; };
+    e.store.channelList[0].lang = "auto"; const message = { content: "안녕하세요" };
+    assert.deepEqual(await e.handleOutgoingTranslation("123", message, () => true), { cancel: true });
+    assert.equal(e.calls, 0); assert.equal(message.content, "안녕하세요"); assert.match(e.notices[0], /Set a channel language/);
+    e.store.channelList[0].lang = "en"; e.store.previewOutgoing = false;
+    const sending = e.handleOutgoingTranslation("123", message, () => true);
+    e.pending.resolve("Hello"); assert.equal(await sending, undefined); assert.equal(detected, 1);
+    assert.equal(e.requests[0][2], "en");
+});
+
+test("stopping or timing out Auto detection cancels the send and the detection request", async t => {
+    t.mock.timers.enable({ apis: ["setTimeout"] });
+    for (const stop of [true, false]) {
+        const e = outgoingEnvironment(); e.store.channelList[0].lang = "auto"; let signal, active = true;
+        e.load("api/detectLanguage.ts").detectOutgoingLanguage = (_, __, requestSignal) => {
+            signal = requestSignal; return new Promise((resolve, reject) => signal.addEventListener("abort", () => reject(Error("aborted")), { once: true }));
+        };
+        const sending = e.handleOutgoingTranslation("123", { content: "안녕하세요" }, () => active);
+        if (stop) { active = false; e.resetOutgoingTranslations(); } else t.mock.timers.tick(20000);
+        assert.deepEqual(await sending, { cancel: true }); assert.equal(signal.aborted, true); assert.equal(e.calls, 0);
+    }
+});
+
+
+test("Auto sends emoji and link-only messages without detecting a language", async () => {
+    const e = outgoingEnvironment(); e.store.channelList[0].lang = "auto";
+    e.load("api/detectLanguage.ts").detectOutgoingLanguage = async () => { throw Error("detection should not run"); };
+    for (const content of ["👍", "https://example.test", "<@123>"]) {
+        const message = { content };
+        assert.equal(await e.handleOutgoingTranslation("123", message, () => true), undefined);
+        assert.equal(message.content, content);
+    }
+    assert.equal(e.calls, 0); assert.equal(e.notices.length, 0);
+});
+
+
+test("removed engine settings become Off while channel preferences and AI engines are preserved", () => {
+    const e = environment({ translationEngine: "removed-engine", channelList: [
+        { id: "1", engine: "removed-engine", lang: "ja", outgoingCustomPrompt: "casual" },
+        { id: "2", engine: "gemini" }, { id: "3", engine: "deepseek" }, { id: "4", engine: "default" }
+    ] });
+    delete e.mocks["settings.ts"];
+    e.mocks["@api/Settings"] = { definePluginSettings: def => ({ def, store: e.store }) };
+    e.mocks["@utils/types"] = { OptionType: {} };
+    const { normalizeTranslationEngines } = e.load("settings.ts"); normalizeTranslationEngines();
+    assert.equal(e.store.translationEngine, "disable");
+    assert.deepEqual(e.store.channelList[0], { id: "1", engine: "disable", lang: "ja", outgoingCustomPrompt: "casual" });
+    assert.deepEqual(e.store.channelList.slice(1).map(c => c.engine), ["gemini", "deepseek", "default"]);
+    e.store.translationEngine = "deepseek"; normalizeTranslationEngines(); assert.equal(e.store.translationEngine, "deepseek");
+});
+
+test("AI workers serialize arrivals within a channel while an earlier request is running", async () => {
+    const e = environment(); const first = deferred(); let calls = 0;
+    e.mocks["api/gemini.ts"].translateBatchWithGemini = async (_, messages) => {
+        calls++; if (calls === 1) await first.promise;
+        return messages.map(m => ({ id: m.id, text: m.text }));
+    };
+    const { AiChannelWorker } = e.load("api/worker.ts"), worker = new AiChannelWorker("123");
+    const a = task("a"), b = task("b"); worker.enqueue(a); worker.flushNow(); await tick();
+    worker.enqueue(b); worker.flushNow(); await tick(); assert.equal(calls, 1);
+    first.resolve(); assert.equal(await a.result, "a"); await tick();
+    worker.flushNow(); assert.equal(await b.result, "b"); await tick(); assert.equal(calls, 2); assert.equal(worker.registry.size, 0);
 });

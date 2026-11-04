@@ -10,7 +10,6 @@ import { BATCH_ACCUMULATION_TIME_GEMINI } from "../constants";
 import { globalProgressStore } from "../utils/progressStore";
 
 interface UseProgressAnimationProps {
-    isGemini: boolean;
     status: "waiting" | "fired";
     isLeader: boolean;
     isPaused: React.MutableRefObject<boolean>;
@@ -22,7 +21,6 @@ interface UseProgressAnimationProps {
 }
 
 export function useProgressAnimation({
-    isGemini,
     status,
     isLeader,
     isPaused,
@@ -40,7 +38,7 @@ export function useProgressAnimation({
     const [renderTick, setRenderTick] = useState(0);
 
     useEffect(() => {
-        if (!isGemini || status === "fired" || !isLeader) return;
+        if (status === "fired" || !isLeader) return;
 
         let animationFrameId: number;
 
@@ -119,7 +117,7 @@ export function useProgressAnimation({
         return () => {
             cancelAnimationFrame(animationFrameId);
         };
-    }, [isGemini, status, isLeader, hasFired, isPaused, targetDeadline, targetEcoProgress]);
+    }, [status, isLeader, hasFired, isPaused, targetDeadline, targetEcoProgress]);
 
     return {
         currentProgressRef

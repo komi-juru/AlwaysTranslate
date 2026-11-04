@@ -8,10 +8,8 @@ export const CACHE_MAX_SIZE = 1000;
 export const CACHE_PERSISTENT_MAX_SIZE = 50000;
 export const CACHE_SAVE_DEBOUNCE = 5000; // ms
 export const GEMINI_BATCH_SIZE = 1000;
-export const DEEPL_BATCH_SIZE = 50;
 export const GEMINI_TEMPERATURE = 0.3;
 export const BATCH_ACCUMULATION_TIME_GEMINI = 200; // ms – debounce interval per new message
-export const BATCH_ACCUMULATION_TIME_DEEPL = 50; // ms
 
 export const LANGUAGES = [
     { label: "Auto Detect", value: "auto" },
@@ -50,11 +48,17 @@ export const GLOBAL_ENGINE_OPTIONS = [
     { label: "Disable", value: "disable" },
     { label: "Gemini", value: "gemini" },
     { label: "DeepSeek", value: "deepseek" },
-    { label: "DeepL", value: "deepl" },
 ];
 
 export const CHANNEL_ENGINE_OPTIONS = [
     { label: "Disable", value: "disable" },
     { label: "Default", value: "default" },
     ...GLOBAL_ENGINE_OPTIONS.filter(o => o.value !== "disable")
+];
+
+export const TRANSLATION_PRESETS = [
+    { name: "Real-time", threshold: 1, wait: 0 },
+    { name: "Balanced", threshold: 3, wait: 10 },
+    { name: "Economy", threshold: 10, wait: 30 },
+    { name: "Sleep", threshold: 250, wait: 0 }
 ];

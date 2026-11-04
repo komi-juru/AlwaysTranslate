@@ -66,17 +66,6 @@ export const settings = definePluginSettings({
         description: "Default engine. Channel overrides apply separately.",
         options: GLOBAL_ENGINE_OPTIONS.map(o => ({ ...o, label: o.value === "disable" ? "Off" : o.label, default: o.value === "gemini" })),
     },
-    manualTranslationEngine: {
-        type: OptionType.SELECT,
-        default: "disable",
-        displayName: "Manual button engine",
-        description: "Engine for the Translate Now button.",
-        options: GLOBAL_ENGINE_OPTIONS.map(o => ({ ...o, label: o.value === "disable" ? "Off" : o.label, default: o.value === "disable" })),
-    },
-    deeplApiKey: {
-        type: OptionType.CUSTOM,
-        default: "",
-    },
     ui_apiKeys: {
         type: OptionType.COMPONENT,
         name: "API Keys",
@@ -137,7 +126,7 @@ export const settings = definePluginSettings({
         type: OptionType.BOOLEAN,
         default: false,
         displayName: "Translate outgoing messages",
-        description: "Translate before sending. Set a channel language first.",
+        description: "Translate before sending. Auto follows the latest message from another person.",
     },
     previewOutgoing: {
         type: OptionType.BOOLEAN,
@@ -257,5 +246,15 @@ export function removeChannel(id: string) {
     const index = channels.findIndex(c => c.id === id);
     if (index !== -1) {
         channels.splice(index, 1);
+    }
+}
+
+export function normalizeTranslationEngines() {
+    const supported = new Set(GLOBAL_ENGINE_OPTIONS.map(option => option.value));
+    if (!supported.has(settings.store.translationEngine)) settings.store.translationEngine = "disable";
+    for (const channel of settings.store.channelList) {
+        if (channel.engine && channel.engine !== "default" && !supported.has(channel.engine)) {
+            updateChannel(channel.id, { engine: "disable" });
+        }
     }
 }

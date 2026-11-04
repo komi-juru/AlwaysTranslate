@@ -30,41 +30,6 @@ export async function batCancelRequest(event: IpcMainInvokeEvent, requestId: str
     requests.get(event.sender.id + ":" + requestId)?.abort();
 }
 
-export async function batDeeplFetch(event: IpcMainInvokeEvent, isFree: boolean, apiKey: string, payload: string, requestId: string) {
-    const url = isFree
-        ? "https://api-free.deepl.com/v2/translate"
-        : "https://api.deepl.com/v2/translate";
-
-    return translationFetch(event, requestId, url, {
-            method: "POST",
-            headers: {
-                "Content-Type": "application/json",
-                "Authorization": `DeepL-Auth-Key ${apiKey}`
-            },
-            body: payload
-        }, 30000);
-}
-
-export async function batDeeplUsageFetch(_: IpcMainInvokeEvent, isFree: boolean, apiKey: string) {
-    const url = isFree
-        ? "https://api-free.deepl.com/v2/usage"
-        : "https://api.deepl.com/v2/usage";
-
-    try {
-        const res = await fetch(url, {
-            method: "GET",
-            headers: {
-                "Authorization": `DeepL-Auth-Key ${apiKey}`
-            }
-        });
-
-        const text = await res.text();
-        return { ok: res.ok, status: res.status, data: text };
-    } catch (e) {
-        return { ok: false, status: -1, data: String(e) };
-    }
-}
-
 export async function batGeminiFetch(event: IpcMainInvokeEvent, apiUrl: string, apiKey: string, payload: string, requestId: string) {
     return translationFetch(event, requestId, `${apiUrl}?key=${apiKey}`, {
             method: "POST",

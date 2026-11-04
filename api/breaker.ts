@@ -4,10 +4,8 @@
  * SPDX-License-Identifier: GPL-3.0-or-later
  */
 
-
-
-import { showTranslationToast } from "../utils/toast";
 import { type GeminiQuotaKind, type GeminiQuotaLockState,settings } from "../settings";
+import { showTranslationToast } from "../utils/toast";
 import { describeApiError } from "./errors";
 
 const recentToasts = new Map<string, number>();
@@ -175,9 +173,8 @@ export function describeGeminiQuotaLock(kind: GeminiQuotaKind, until: number) {
     return `Rate limited (${formatDurationShort(until - Date.now())})`;
 }
 
-export function showGeminiQuotaToast(kind: GeminiQuotaKind, until: number, isManual = false) {
-    const cooldown = isManual ? 1500 : 10 * 60 * 1000;
-    showApiToast("gemini", describeGeminiQuotaLock(kind, until), cooldown);
+export function showGeminiQuotaToast(kind: GeminiQuotaKind, until: number) {
+    showApiToast("gemini", describeGeminiQuotaLock(kind, until), 10 * 60 * 1000);
 }
 
 

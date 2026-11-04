@@ -18,11 +18,11 @@ import { ChannelManager } from "./components/ChannelManager";
 import { ClearCacheButton } from "./components/ClearCacheButton";
 import { ColorPickerInput } from "./components/ColorPickerInput";
 import { GithubLinkInjector } from "./components/GithubLinkInjector";
-import { ManualBatchChatBarIcon, TranslateHeaderButton, TranslateIcon } from "./components/HeaderBarIcon";
+import { TranslateHeaderButton } from "./components/HeaderBarIcon";
 import { SettingsOverview } from "./components/SettingsOverview";
 import { SettingsPresets } from "./components/SettingsPresets";
 import { TranslationAccessory } from "./components/TranslationAccessory";
-import { settings } from "./settings";
+import { normalizeTranslationEngines, settings } from "./settings";
 import { TranslationCache } from "./utils/cache";
 
 
@@ -35,17 +35,17 @@ const SettingsHeader = ({ title }: { title: string }) => (
 
 // Wire up dynamic COMPONENT settings (avoids circular imports)
 settings.def.ui_githubLink.component = GithubLinkInjector;
-settings.def.ui_overview.component = SettingsOverview;
+settings.def.ui_overview.component = () => <SettingsOverview />;
 settings.def.header_translation.component = () => <SettingsHeader title="Translation" />;
 settings.def.header_management.component = () => <SettingsHeader title="Channels & Outgoing Messages" />;
 settings.def.header_design.component = () => <SettingsHeader title="Appearance" />;
 settings.def.channelManager.component = ChannelManager;
-settings.def.ui_apiKeys.component = ApiKeysManager;
+settings.def.ui_apiKeys.component = () => <ApiKeysManager />;
 
 
 settings.def.ui_translationColor.component = ColorPickerInput;
 settings.def.ui_clearCache.component = ClearCacheButton;
-settings.def.ui_presets.component = SettingsPresets;
+settings.def.ui_presets.component = () => <SettingsPresets />;
 
 export let pluginStarted = false;
 
@@ -63,15 +63,11 @@ export default definePlugin({
     async start() {
         const generation = ++lifecycleGeneration;
         resetTranslationQueues();
+        normalizeTranslationEngines();
         await TranslationCache.getInstance().init();
         if (generation !== lifecycleGeneration) return;
         pluginStarted = true;
         addMessageAccessory("AlwaysTranslate", props => <TranslationAccessory message={props.message} />, 0);
-    },
-
-    chatBarButton: {
-        render: ManualBatchChatBarIcon,
-        icon: TranslateIcon
     },
 
     stop() {

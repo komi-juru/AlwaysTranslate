@@ -20,12 +20,9 @@ interface UseTranslationExecutionProps {
     resolvedTarget: string;
     shouldTranslateContent: boolean;
     allowed: boolean;
-    isManual: boolean;
     skipMessage: boolean;
-    deeplApiKey?: string;
     geminiApiKey?: string;
     deepseekApiKey?: string;
-    translationEngine: string;
     cachedTranslated: string | undefined;
     cacheRevision: number;
 }
@@ -43,19 +40,16 @@ export function useTranslationExecution({
     resolvedTarget,
     shouldTranslateContent,
     allowed,
-    isManual,
     skipMessage,
-    deeplApiKey,
     geminiApiKey,
     deepseekApiKey,
-    translationEngine,
     cachedTranslated,
     cacheRevision
 }: UseTranslationExecutionProps) {
     const [translatedText, setTranslatedText] = useState<string | null>(cachedTranslated ?? null);
     const [isTranslating, setIsTranslating] = useState(false);
 
-    // Sync state if cache updates synchronously (e.g. from manual batch)
+    // Sync state when a cached translation becomes available
     useEffect(() => {
         if (cachedTranslated && translatedText !== cachedTranslated) {
             setTranslatedText(cachedTranslated);
@@ -69,14 +63,13 @@ export function useTranslationExecution({
             return;
         }
 
-        if (!content || (!allowed && !isManual) || skipMessage || !shouldTranslateContent || currentEngine === "disable") {
+        if (!content || !allowed || skipMessage || !shouldTranslateContent || currentEngine === "disable") {
             setIsTranslating(false);
             setTranslatedText(null);
             return;
         }
 
         let cancelled = false;
-        let timeoutId: NodeJS.Timeout;
 
         const run = async () => {
             if (cancelled) return;
@@ -85,19 +78,18 @@ export function useTranslationExecution({
 
             const cache = TranslationCache.getInstance();
             const generation = cache.getGeneration(cacheKey);
-            let promise = TranslationCache.getInstance().getPending(cacheKey, content);
+            let promise = cache.getPending(cacheKey, content);
             if (!promise) {
                 promise = safeTranslate(
                     content,
                     sourceLang,
                     resolvedTarget,
                     currentEngine,
-                    { deepl: deeplApiKey || "", gemini: geminiApiKey || "", deepseek: deepseekApiKey || "" },
+                    { gemini: geminiApiKey || "", deepseek: deepseekApiKey || "" },
                     channelId,
-                    messageId,
-                    isManual
+                    messageId
                 );
-                TranslationCache.getInstance().setPending(cacheKey, content, promise);
+                cache.setPending(cacheKey, content, promise);
             }
 
             setIsTranslating(true);
@@ -113,30 +105,21 @@ export function useTranslationExecution({
             }
         };
 
-        // Scroll debounce: skip API calls if user scrolls past message quickly (DeepL specific)
-        if (currentEngine === "deepl") {
-            timeoutId = setTimeout(run, 500);
-        } else {
-            run();
-        }
+        run();
 
         return () => {
             cancelled = true;
-            if (timeoutId) clearTimeout(timeoutId);
         };
     }, [
         cacheKey,
         cacheRevision,
         content,
         allowed,
-        isManual,
         resolvedTarget,
         currentEngine,
         sourceLang,
-        deeplApiKey,
         geminiApiKey,
         deepseekApiKey,
-        translationEngine,
         skipMessage,
         shouldTranslateContent,
         cachedTranslated,

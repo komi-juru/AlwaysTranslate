@@ -4,6 +4,7 @@
  * SPDX-License-Identifier: GPL-3.0-or-later
  */
 
+import ErrorBoundary from "@components/ErrorBoundary";
 import { useRef } from "@webpack/common";
 
 import { useEcoModeEvents } from "../hooks/useEcoModeEvents";
@@ -15,17 +16,15 @@ interface LoadingIndicatorProps {
     topMargin: number;
     hideOriginal: boolean;
     showSeparator: boolean;
-    isGemini: boolean;
     messageId: string;
     channelId: string;
 }
 
-export function LoadingIndicator({
+export const LoadingIndicator = ErrorBoundary.wrap(function LoadingIndicator({
     displayColor,
     topMargin,
     hideOriginal,
     showSeparator,
-    isGemini,
     messageId,
     channelId
 }: LoadingIndicatorProps) {
@@ -34,7 +33,7 @@ export function LoadingIndicator({
 
     const { APIEcoModeThreshold } = settings.use(["APIEcoModeThreshold"]);
 
-    // 1. Hook to manage window events for Gemini batch state
+    // 1. Hook to manage window events for AI batch state
     const {
         hasFired,
         status,
@@ -44,11 +43,10 @@ export function LoadingIndicator({
         targetEcoProgress,
         targetStartTime,
         targetMaxWaitMs
-    } = useEcoModeEvents({ isGemini, channelId, messageId });
+    } = useEcoModeEvents({ channelId, messageId });
 
     // 2. Hook to run the rAF loop and sync progress
     const { currentProgressRef } = useProgressAnimation({
-        isGemini,
         status,
         isLeader,
         isPaused,
@@ -73,7 +71,7 @@ export function LoadingIndicator({
             {(!hideOriginal && showSeparator) && <div className="bat-separator" />}
 
             <div className="bat-loading-wrapper">
-                {(!isGemini || status === "fired") ? (
+                {(status === "fired") ? (
                     <div className="bat-loading-dots">
                         <div className="bat-dot" />
                         <div className="bat-dot" />
@@ -115,4 +113,4 @@ export function LoadingIndicator({
             </div>
         </div>
     );
-}
+}, { noop: true });

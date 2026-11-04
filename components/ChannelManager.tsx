@@ -1,16 +1,15 @@
-import { Button } from "@components/Button";
-import { Heading as FormTitle } from "@components/Heading";
-import { Text as FormText } from "@components/Text";
 /*
  * Vencord, a Discord client mod
  * Copyright (c) 2026 Vendicated and contributors
  * SPDX-License-Identifier: GPL-3.0-or-later
  */
 
+import { Button } from "@components/Button";
 import { Divider } from "@components/Divider";
+import { Heading as FormTitle } from "@components/Heading";
+import { Text as FormText } from "@components/Text";
 import { ChannelStore, GuildStore, SearchableSelect, TextInput, UserStore, useState, useStateFromStores } from "@webpack/common";
 
-import { showTranslationToast } from "../utils/toast";
 import { CHANNEL_ENGINE_OPTIONS, GLOBAL_ENGINE_OPTIONS, LANGUAGES } from "../constants";
 import {
     addChannel as addCh,
@@ -18,6 +17,7 @@ import {
     settings,
     updateChannel,
 } from "../settings";
+import { showTranslationToast } from "../utils/toast";
 
 export interface PartialChannel {
     id: string;
@@ -167,7 +167,7 @@ export function ChannelManager() {
                     ? "Set an engine, language and prompts per channel."
                     : "Only listed channels are translated automatically."}
                 <br />
-                Channel language: their language. Auto detects incoming text only.
+                Channel language: their language. Auto uses the latest message from another person for outgoing translation.
             </FormText>
 
             <Divider style={{ marginTop: "16px", marginBottom: "16px" }} />

@@ -6,21 +6,20 @@
 
 import { useEffect, useRef, useState } from "@webpack/common";
 
-import { getGeminiBatchState } from "../api/translate";
+import { getAiBatchState } from "../api/translate";
 import { BatGeminiEventDetail, getDebouncedEventName, getFiredEventName, getPausedEventName } from "../constants/events";
 import { globalProgressStore } from "../utils/progressStore";
 
 interface UseEcoModeEventsProps {
-    isGemini: boolean;
     channelId: string;
     messageId: string;
 }
 
-export function useEcoModeEvents({ isGemini, channelId, messageId }: UseEcoModeEventsProps) {
+export function useEcoModeEvents({ channelId, messageId }: UseEcoModeEventsProps) {
     const hasFired = useRef(false);
 
     // Initialize synchronously from channel state to avoid React double-render blink
-    const initialState = isGemini ? getGeminiBatchState(channelId, messageId) : null;
+    const initialState = getAiBatchState(channelId, messageId);
 
     const isPaused = useRef(initialState ? (initialState.isPaused || initialState.isProcessing) : false);
     const initialDeadline = (initialState && initialState.deadline) ? initialState.deadline : Date.now() + 3000;
@@ -35,9 +34,9 @@ export function useEcoModeEvents({ isGemini, channelId, messageId }: UseEcoModeE
 
     // Sync with global batch state
     useEffect(() => {
-        if (!isGemini || status === "fired") return;
+        if (status === "fired") return;
 
-        const state = getGeminiBatchState(channelId, messageId);
+        const state = getAiBatchState(channelId, messageId);
         if (state) {
             if (state.isProcessing || state.isFired) {
                 globalProgressStore.reset();
@@ -60,11 +59,10 @@ export function useEcoModeEvents({ isGemini, channelId, messageId }: UseEcoModeE
                 setIsLeader(state.leaderIds.includes(messageId));
             }
         }
-    }, [isGemini, channelId, messageId, status]);
+    }, [channelId, messageId, status]);
 
     // Setup window event listeners for batch worker
     useEffect(() => {
-        if (!isGemini) return;
 
         const firedName = getFiredEventName(channelId);
         const debouncedName = getDebouncedEventName(channelId);
@@ -120,7 +118,7 @@ export function useEcoModeEvents({ isGemini, channelId, messageId }: UseEcoModeE
             window.removeEventListener(debouncedName, debouncedHandler as EventListener);
             window.removeEventListener(pausedName, pausedHandler as EventListener);
         };
-    }, [isGemini, channelId, messageId]);
+    }, [channelId, messageId]);
 
     return {
         hasFired,

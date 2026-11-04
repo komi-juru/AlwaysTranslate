@@ -11,15 +11,19 @@ import { getChannelConfig, settings } from "../settings";
 import { TranslationCache } from "../utils/cache";
 import { shouldTranslate } from "../utils/message";
 import { showTranslationToast } from "../utils/toast";
+import { clearDetectedLanguages, detectOutgoingLanguage } from "./detectLanguage";
+import { TRANSLATION_TIMEOUT_MS } from "./errors";
 import { safeTranslate } from "./translate";
 
 const previews = new Map<string, string>();
-const pending = new Map<string, symbol>();
+const pending = new Map<string, AbortController>();
 let activeCount = 0;
 
 export function resetOutgoingTranslations() {
     previews.clear();
+    pending.forEach(controller => controller.abort());
     pending.clear();
+    clearDetectedLanguages();
     document.body.classList.remove("bat-translating-active");
 }
 
@@ -39,16 +43,15 @@ export async function handleOutgoingTranslation(channelId: string, message: Mess
         return;
     }
 
-    const { translationEngine, deeplApiKey, geminiApiKey, deepseekApiKey } = settings.store;
-    let targetLang = config?.lang && config.lang !== "auto" ? config.lang : settings.store.targetLang || "auto";
-    const clientLang = document.documentElement.lang.split("-")[0] || "en";
-    if (targetLang === "auto") targetLang = clientLang;
-    if (targetLang === clientLang) return;
+    const { translationEngine, geminiApiKey, deepseekApiKey } = settings.store;
+    let targetLang = config?.lang || "auto";
     const engine = !config?.engine || config.engine === "default" ? translationEngine : config.engine;
-    if (engine === "disable" || !shouldTranslate(message.content, targetLang)) return;
+    if (engine === "disable") return;
+    if (targetLang === "auto" && !shouldTranslate(message.content, "und")) return;
+    if (targetLang !== "auto" && !shouldTranslate(message.content, targetLang)) return;
     if (pending.has(channelId)) return { cancel: true };
 
-    const token = Symbol();
+    const token = new AbortController();
     pending.set(channelId, token);
     const original = message.content;
     const originalDraft = DraftStore.getDraft(channelId, DraftType.ChannelMessage);
@@ -56,9 +59,25 @@ export async function handleOutgoingTranslation(channelId: string, message: Mess
     activeCount++;
     document.body.classList.add("bat-translating-active");
     try {
+        if (targetLang === "auto") {
+            const timer = setTimeout(() => token.abort(), TRANSLATION_TIMEOUT_MS);
+            let language: string | null;
+            try {
+                language = await detectOutgoingLanguage(channelId, engine, token.signal);
+            } finally {
+                clearTimeout(timer);
+            }
+            if (!isActive()) return { cancel: true };
+            if (!language) {
+                showTranslationToast("Could not detect the other person's language. Set a channel language before sending.");
+                return { cancel: true };
+            }
+            targetLang = language;
+            if (!shouldTranslate(original, targetLang)) return;
+        }
         const result = await safeTranslate(original, "auto", targetLang, engine,
-            { deepl: deeplApiKey, gemini: geminiApiKey, deepseek: deepseekApiKey },
-            channelId, undefined, false, config?.outgoingCustomPrompt?.trim() || "");
+            { gemini: geminiApiKey, deepseek: deepseekApiKey },
+            channelId, undefined, config?.outgoingCustomPrompt?.trim() || "");
         if (!isActive()) return { cancel: true };
         if (!result) {
             showTranslationToast("Translation failed. Your message was not sent.");

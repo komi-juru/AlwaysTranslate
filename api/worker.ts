@@ -4,16 +4,15 @@
  * SPDX-License-Identifier: GPL-3.0-or-later
  */
 
-import { BATCH_ACCUMULATION_TIME_DEEPL, BATCH_ACCUMULATION_TIME_GEMINI, DEEPL_BATCH_SIZE, GEMINI_BATCH_SIZE } from "../constants";
+import { BATCH_ACCUMULATION_TIME_GEMINI, GEMINI_BATCH_SIZE } from "../constants";
 import { settings } from "../settings";
 import { Logger } from "../utils/logger";
 import { globalProgressStore } from "../utils/progressStore";
 import { APIBreaker, setGeminiQuotaLock, showApiToast, showGeminiQuotaToast } from "./breaker";
-import { aiRequestLimiters } from "./requestLimiter";
-import { translateWithDeepL } from "./deepl";
 import { translateBatchWithDeepSeek } from "./deepseek";
 import { TRANSLATION_TIMEOUT_MS } from "./errors";
 import { translateBatchWithGemini } from "./gemini";
+import { aiRequestLimiters } from "./requestLimiter";
 
 function limitTask(task: TranslationTask, expire: () => void) {
     const { resolve } = task;
@@ -47,14 +46,13 @@ export interface TranslationTask {
     engine: string;
     dmPrompt: string;
     status?: "QUEUED" | "PROCESSING";
-    isManual?: boolean;
     model?: string;
     endpoint?: string;
 }
 
 export type WorkerState = "IDLE" | "ACCUMULATING" | "PROCESSING";
 
-export class GeminiChannelWorker {
+export class AiChannelWorker {
     public channelId: string;
     public registry = new Map<string, TranslationTask>();
     public state: WorkerState = "IDLE";
@@ -98,7 +96,7 @@ export class GeminiChannelWorker {
         if (this.registry.size === 0) {
             this.state = "IDLE";
             this.firstMessageTime = 0;
-            geminiWorkers.delete(this.channelId);
+            aiWorkers.delete(this.channelId);
             return;
         }
 
@@ -134,7 +132,6 @@ export class GeminiChannelWorker {
 
         this.state = "ACCUMULATING";
 
-        const hasManual = Array.from(this.registry.values()).some(t => t.isManual && (t.status === "QUEUED" || !t.status));
 
         const ecoThreshold = settings.store.APIEcoModeThreshold ?? 1;
         const maxWaitMs = (settings.store.APIMaxBatchWait ?? 0) * 1000;
@@ -150,10 +147,7 @@ export class GeminiChannelWorker {
         let ecoProgress: number | undefined;
         let nextAction: "process" | "schedule" = "process";
 
-        if (hasManual) {
-            deadline = now + 150; // 150ms debounce for manual requests
-            ecoProgress = 1;
-        } else if (queuedCount >= GEMINI_BATCH_SIZE) {
+        if (queuedCount >= GEMINI_BATCH_SIZE) {
             deadline = now + 150; // 150ms debounce for immediate processing
             ecoProgress = 1;
         } else if (ecoThreshold > 1 && queuedCount < ecoThreshold && !this.thresholdMetTime) {
@@ -373,7 +367,7 @@ export class GeminiChannelWorker {
             this.firstMessageTime = 0;
             this.thresholdMetTime = 0;
             if (this.registry.size === 0) {
-                geminiWorkers.delete(this.channelId);
+                aiWorkers.delete(this.channelId);
             }
         }
     }
@@ -408,191 +402,17 @@ export class GeminiChannelWorker {
         }
         this.clearPendingTasks();
         this.state = "IDLE";
-        if (geminiWorkers.get(this.channelId) === this) geminiWorkers.delete(this.channelId);
+        if (aiWorkers.get(this.channelId) === this) aiWorkers.delete(this.channelId);
     }
 }
 
-export const geminiWorkers = new Map<string, GeminiChannelWorker>();
-
-export class DeeplChannelWorker {
-    public key: string;
-    public registry = new Map<string, TranslationTask>();
-    public state: WorkerState = "IDLE";
-    private timer: NodeJS.Timeout | null = null;
-    private abortController: AbortController | null = null;
-    private generation = 0;
-
-    constructor(key: string) {
-        this.key = key;
-    }
-
-    public getQueuedCount() {
-        let count = 0;
-        for (const t of this.registry.values()) {
-            if (t.status === "QUEUED" || !t.status) count++;
-        }
-        return count;
-    }
-
-    public enqueue(task: TranslationTask) {
-        limitTask(task, () => {
-            this.registry.delete(task.id);
-            if (this.registry.size === 0) this.reset();
-        });
-        task.status = "QUEUED";
-        this.registry.set(task.id, task);
-        this.schedule();
-    }
-
-    private schedule() {
-        if (this.state === "PROCESSING") return;
-        if (this.timer) clearTimeout(this.timer);
-
-        if (this.registry.size === 0) {
-            this.state = "IDLE";
-            deeplWorkers.delete(this.key);
-            return;
-        }
-
-        this.state = "ACCUMULATING";
-        this.timer = setTimeout(() => this.process(), BATCH_ACCUMULATION_TIME_DEEPL);
-    }
-
-    public reSchedule() {
-        if (this.state !== "PROCESSING" && this.getQueuedCount() > 0) {
-            this.schedule();
-        }
-    }
-
-    private clearPendingTasks() {
-        this.registry.forEach(t => t.resolve(""));
-        this.registry.clear();
-    }
-
-    private async process() {
-        if (this.registry.size === 0 || this.state === "PROCESSING") return;
-        const { generation } = this;
-
-        const currentTasks: TranslationTask[] = [];
-        for (const t of this.registry.values()) {
-            if (t.status === "QUEUED" || !t.status) {
-                t.status = "PROCESSING";
-                currentTasks.push(t);
-            }
-        }
-
-        if (currentTasks.length === 0) return;
-
-        this.state = "PROCESSING";
-
-        const [, sourceLang, targetLang, apiKey] = this.key.split("|||");
-        const reversedTasks = currentTasks.slice().reverse();
-
-        for (let i = 0; i < reversedTasks.length; i += DEEPL_BATCH_SIZE) {
-            if (generation !== this.generation) return;
-            const chunk = reversedTasks.slice(i, i + DEEPL_BATCH_SIZE).filter(t => this.registry.get(t.id) === t);
-            if (!chunk.length) continue;
-
-            this.abortController = new AbortController();
-            const timeoutId = setTimeout(() => this.abortController?.abort(), TRANSLATION_TIMEOUT_MS);
-
-            try {
-                const texts = chunk.map(t => t.text);
-                const fetchPromise = translateWithDeepL(texts, sourceLang, targetLang, apiKey, this.abortController.signal);
-
-                const timeoutPromise = new Promise<any>((_, reject) => {
-                    this.abortController?.signal.addEventListener("abort", () => reject(new Error("Timeout: DeepL API logical abort.")));
-                });
-
-                const results = await Promise.race([fetchPromise, timeoutPromise]);
-                if (generation !== this.generation) return;
-                clearTimeout(timeoutId);
-
-                chunk.forEach((t, idx) => {
-                    t.resolve(results[idx] || "");
-                    if (this.registry.get(t.id) === t) {
-                        this.registry.delete(t.id);
-                    }
-                });
-            } catch (e: unknown) {
-                clearTimeout(timeoutId);
-                if (generation !== this.generation) return;
-                Logger.error("Translate", "DeepL Batch translation error", e);
-
-                const errorMsg = e instanceof Error ? e.message : String(e);
-                let status: number | null = null;
-                let errorCode: string | null = null;
-                if (typeof e === "object" && e !== null) {
-                    if ("status" in e) status = (e as any).status;
-                    if ("code" in e) errorCode = (e as any).code;
-                }
-
-                const handledByBreaker = APIBreaker.reportError("deepl", apiKey, status, errorCode, errorMsg);
-
-                if (!handledByBreaker) {
-                    showEngineToast("deepl", errorMsg.length > 80 ? errorMsg.substring(0, 80) + "..." : errorMsg || "Request failed");
-                } else {
-                    this.reset();
-                    return;
-                }
-
-                chunk.forEach(t => {
-                    t.resolve("");
-                    if (this.registry.get(t.id) === t) {
-                        this.registry.delete(t.id);
-                    }
-                });
-            } finally {
-                clearTimeout(timeoutId);
-                this.abortController = null;
-            }
-        }
-
-        const remainingQueued = this.getQueuedCount();
-        if (remainingQueued > 0) {
-            this.state = "ACCUMULATING";
-            this.schedule();
-        } else {
-            this.state = "IDLE";
-            if (this.registry.size === 0) {
-                deeplWorkers.delete(this.key);
-            }
-        }
-    }
-
-    public flushNow() {
-        if (this.timer) {
-            clearTimeout(this.timer);
-            this.timer = null;
-        }
-        if (this.getQueuedCount() > 0 && this.state !== "PROCESSING") {
-            this.process();
-        }
-    }
-
-    public reset() {
-        this.generation++;
-        if (this.timer) clearTimeout(this.timer);
-        if (this.abortController) {
-            this.abortController.abort();
-            this.abortController = null;
-        }
-        this.clearPendingTasks();
-        this.state = "IDLE";
-        if (deeplWorkers.get(this.key) === this) deeplWorkers.delete(this.key);
-    }
-}
-
-export const deeplWorkers = new Map<string, DeeplChannelWorker>();
+export const aiWorkers = new Map<string, AiChannelWorker>();
 
 export function resetAllWorkers() {
-    geminiWorkers.forEach(w => w.reset());
-    geminiWorkers.clear();
-    deeplWorkers.forEach(w => w.reset());
-    deeplWorkers.clear();
+    aiWorkers.forEach(w => w.reset());
+    aiWorkers.clear();
 }
 
 export function reScheduleAllWorkers() {
-    geminiWorkers.forEach(w => w.reSchedule());
-    deeplWorkers.forEach(w => w.reSchedule());
+    aiWorkers.forEach(w => w.reSchedule());
 }

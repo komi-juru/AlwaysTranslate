@@ -1,26 +1,21 @@
-import { Heading as FormTitle } from "@components/Heading";
-import { Text as FormText } from "@components/Text";
 /*
  * Vencord, a Discord client mod
  * Copyright (c) 2026 Vendicated and contributors
  * SPDX-License-Identifier: GPL-3.0-or-later
  */
 
+import ErrorBoundary from "@components/ErrorBoundary";
+import { Heading as FormTitle } from "@components/Heading";
+import { Text as FormText } from "@components/Text";
 import { SearchableSelect, TextInput } from "@webpack/common";
 
 import { reScheduleAllWorkers } from "../api/translate";
+import { TRANSLATION_PRESETS } from "../constants";
 import { settings } from "../settings";
 
-const presets = [
-    { name: "Real-time", threshold: 1, wait: 0 },
-    { name: "Balanced", threshold: 3, wait: 10 },
-    { name: "Economy", threshold: 10, wait: 30 },
-    { name: "Sleep", threshold: 250, wait: 0 }
-];
-
-export function SettingsPresets() {
+export const SettingsPresets = ErrorBoundary.wrap(function SettingsPresets() {
     const { APIEcoModeThreshold: threshold, APIMaxBatchWait: wait } = settings.use(["APIEcoModeThreshold", "APIMaxBatchWait"]);
-    const current = presets.find(p => p.threshold === threshold && p.wait === wait);
+    const current = TRANSLATION_PRESETS.find(p => p.threshold === threshold && p.wait === wait);
     const update = (count: number, seconds: number) => {
         settings.store.APIEcoModeThreshold = count;
         settings.store.APIMaxBatchWait = seconds;
@@ -34,9 +29,9 @@ export function SettingsPresets() {
             <div style={{ marginTop: 8 }}>
                 <SearchableSelect
                     value={current?.name ?? "Custom"}
-                    options={[...presets.map(p => ({ label: p.name, value: p.name })), { label: "Custom", value: "Custom" }]}
+                    options={[...TRANSLATION_PRESETS.map(p => ({ label: p.name, value: p.name })), { label: "Custom", value: "Custom" }]}
                     onChange={(value: string) => {
-                        const preset = presets.find(p => p.name === value);
+                        const preset = TRANSLATION_PRESETS.find(p => p.name === value);
                         if (preset) update(preset.threshold, preset.wait);
                     }}
                 />
@@ -60,4 +55,4 @@ export function SettingsPresets() {
             <FormText>0 seconds: wait for the message count.</FormText>
         </section>
     );
-}
+}, { noop: true });

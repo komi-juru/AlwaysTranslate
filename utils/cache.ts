@@ -15,7 +15,6 @@ const Native = VencordNative.pluginHelpers.AlwaysTranslate as PluginNative<typeo
 export class TranslationCache {
     private static instance: TranslationCache | null = null;
 
-    private volatileCache = new Map<string, string>();
     private persistentCache = new Map<string, string>();
     private outgoingCache = new Map<string, string>();
     private initPromise: Promise<void> | null = null;
@@ -24,14 +23,11 @@ export class TranslationCache {
     public cacheRevision = 0;
 
     private pending = new Map<string, { source: string, promise: Promise<string | null> }>();
-    private readonly maxSize: number;
     private saveTimeout: NodeJS.Timeout | null = null;
     private isDirty = false;
     private savePromise: Promise<void> = Promise.resolve();
 
-    private constructor(maxSize = CACHE_MAX_SIZE) {
-        this.maxSize = maxSize;
-    }
+    private constructor() {}
 
     public static getInstance(): TranslationCache {
         if (!this.instance) {
@@ -147,67 +143,31 @@ export class TranslationCache {
     }
 
     get(key: string): string | undefined {
-        // Priority 1: Persistent Cache (Gemini)
-        let val = this.persistentCache.get(key);
-        if (val !== undefined) {
-            // LRU re-insertion
+        const value = this.persistentCache.get(key);
+        if (value !== undefined) {
             this.persistentCache.delete(key);
-            this.persistentCache.set(key, val);
-            return val;
+            this.persistentCache.set(key, value);
         }
-
-        // Priority 2: Volatile Cache (DeepL)
-        val = this.volatileCache.get(key);
-        if (val !== undefined) {
-            this.volatileCache.delete(key);
-            this.volatileCache.set(key, val);
-            return val;
-        }
-
-        return undefined;
+        return value;
     }
 
     public peek(key: string): string | undefined {
-        const val = this.persistentCache.get(key);
-        if (val !== undefined) return val;
-        return this.volatileCache.get(key);
+        return this.persistentCache.get(key);
     }
 
     set(key: string, translated: string, engine: string) {
-        // Purge from both maps to avoid cross-map duplication
+        if (!engine.startsWith("gemini") && !engine.startsWith("deepseek")) return;
         this.persistentCache.delete(key);
-        this.volatileCache.delete(key);
-
-        if (engine.startsWith("gemini") || engine.startsWith("deepseek")) {
-            this.persistentCache.set(key, translated);
-
-            while (this.persistentCache.size > CACHE_PERSISTENT_MAX_SIZE) {
-                const oldest = this.persistentCache.keys().next().value;
-                if (oldest !== undefined) {
-                    this.persistentCache.delete(oldest);
-                }
-            }
-
-            this.isDirty = true;
-            this.saveToStorage();
-        } else {
-            this.volatileCache.set(key, translated);
-
-            while (this.volatileCache.size > this.maxSize) {
-                const oldest = this.volatileCache.keys().next().value;
-                if (oldest !== undefined) {
-                    this.volatileCache.delete(oldest);
-                }
-            }
+        this.persistentCache.set(key, translated);
+        while (this.persistentCache.size > CACHE_PERSISTENT_MAX_SIZE) {
+            this.persistentCache.delete(this.persistentCache.keys().next().value!);
         }
+        this.isDirty = true;
+        this.saveToStorage();
     }
 
     has(key: string): boolean {
-        return this.persistentCache.has(key) || this.volatileCache.has(key);
-    }
-
-    clearVolatile() {
-        this.volatileCache.clear();
+        return this.persistentCache.has(key);
     }
 
     public clearChannel(channelId: string) {
@@ -220,11 +180,6 @@ export class TranslationCache {
             if (key.startsWith(prefix)) {
                 this.persistentCache.delete(key);
                 deleted = true;
-            }
-        }
-        for (const key of this.volatileCache.keys()) {
-            if (key.startsWith(prefix)) {
-                this.volatileCache.delete(key);
             }
         }
 
@@ -240,7 +195,6 @@ export class TranslationCache {
 
     public clearAll() {
         this.persistentCache.clear();
-        this.volatileCache.clear();
         this.pending.clear();
         this.globalGeneration++;
         this.channelGenerations.clear();
@@ -257,17 +211,14 @@ export class TranslationCache {
         for (const key of this.persistentCache.keys()) {
             if (key.startsWith(prefix)) count++;
         }
-        for (const key of this.volatileCache.keys()) {
-            if (key.startsWith(prefix)) count++;
-        }
         return count;
     }
 
     public getTotalCount(): number {
-        return this.persistentCache.size + this.volatileCache.size;
+        return this.persistentCache.size;
     }
 
     get size(): number {
-        return this.volatileCache.size + this.persistentCache.size;
+        return this.persistentCache.size;
     }
 }

@@ -7,7 +7,7 @@
 import { getChannelConfig, settings } from "../settings";
 import { shouldTranslate } from "../utils/message";
 import { getGeminiActiveQuotaLock, showGeminiQuotaToast } from "./breaker";
-import { DeeplChannelWorker, deeplWorkers, GeminiChannelWorker, geminiWorkers, reScheduleAllWorkers,resetAllWorkers } from "./worker";
+import { AiChannelWorker, aiWorkers, reScheduleAllWorkers,resetAllWorkers } from "./worker";
 
 export { reScheduleAllWorkers };
 
@@ -22,11 +22,10 @@ export async function translate(
     channelId: string,
     messageId: string,
     text: string,
-    sourceLang: string,
+    _sourceLang: string,
     targetLang: string,
     engine: string,
-    apiKeys: { deepl: string, gemini: string, deepseek: string },
-    isManual = false,
+    apiKeys: { gemini: string, deepseek: string },
     customPrompt?: string
 ): Promise<string> {
     if (engine?.startsWith("gemini") || engine?.startsWith("deepseek")) {
@@ -36,7 +35,7 @@ export async function translate(
         if (!isDeepSeek) {
             const activeLock = getGeminiActiveQuotaLock(engineKey);
             if (activeLock) {
-                showGeminiQuotaToast(activeLock.kind, activeLock.until, isManual);
+                showGeminiQuotaToast(activeLock.kind, activeLock.until);
                 return "";
             }
         }
@@ -45,14 +44,14 @@ export async function translate(
             const { config } = getChannelConfig(channelId);
             const dmPrompt = customPrompt ?? config?.aiCustomPrompt ?? "";
 
-            if (!geminiWorkers.has(channelId)) {
-                geminiWorkers.set(channelId, new GeminiChannelWorker(channelId));
+            if (!aiWorkers.has(channelId)) {
+                aiWorkers.set(channelId, new AiChannelWorker(channelId));
             }
 
-            const worker = geminiWorkers.get(channelId)!;
+            const worker = aiWorkers.get(channelId)!;
             const taskId = crypto.randomUUID();
             worker.enqueue({
-                id: taskId, messageId, channelId, text, resolve, targetLang, apiKey: engineKey, engine, dmPrompt, isManual,
+                id: taskId, messageId, channelId, text, resolve, targetLang, apiKey: engineKey, engine, dmPrompt,
                 model: isDeepSeek ? settings.store.deepseekModel : settings.store.geminiModel,
                 endpoint: isDeepSeek ? settings.store.deepseekBaseUrl : undefined
             });
@@ -67,37 +66,11 @@ export async function translate(
 
         if (!isDeepSeek) {
             const retryLock = getGeminiActiveQuotaLock(engineKey);
-            if (retryLock) showGeminiQuotaToast(retryLock.kind, retryLock.until, isManual);
+            if (retryLock) showGeminiQuotaToast(retryLock.kind, retryLock.until);
         }
 
         return "";
     }
-
-    // DeepL uses Batching
-    if (engine === "deepl") {
-        const result = await new Promise<string>(resolve => {
-            const key = `deepl|||${sourceLang}|||${targetLang}|||${apiKeys.deepl}`;
-            if (!deeplWorkers.has(key)) {
-                deeplWorkers.set(key, new DeeplChannelWorker(key));
-            }
-
-            const worker = deeplWorkers.get(key)!;
-            worker.enqueue({
-                id: crypto.randomUUID(), messageId, channelId, text, resolve, targetLang, apiKey: apiKeys.deepl, engine: "deepl", dmPrompt: ""
-            });
-            if (!messageId) {
-                worker.flushNow();
-            }
-        });
-
-        if (result !== "") {
-            return result;
-        }
-
-        return "";
-    }
-
-
 
     // Default fallback (should not be reached unless engine is unknown)
     return Promise.resolve("");
@@ -108,8 +81,8 @@ export async function translate(
 // --- Tokenizer Helpers ---
 const PRESERVE_BASE = /<@[!&]?\d+>|<#\d+>|<[^>]+>|https?:\/\/[^\s]+|```[\s\S]*?```|`[^`]+`/gmu;
 
-export function getGeminiBatchState(channelId: string, messageId: string) {
-    const worker = geminiWorkers.get(channelId);
+export function getAiBatchState(channelId: string, messageId: string) {
+    const worker = aiWorkers.get(channelId);
     if (!worker) return null;
 
     const task = Array.from(worker.registry.values()).find(t => t.messageId === messageId);
@@ -180,10 +153,9 @@ export async function safeTranslate(
     sourceLang: string,
     targetLang: string,
     engine: string,
-    apiKeys: { deepl: string, gemini: string, deepseek: string },
+    apiKeys: { gemini: string, deepseek: string },
     channelId?: string,
     messageId?: string,
-    isManual = false,
     customPrompt?: string
 ): Promise<string | null> {
     if (!shouldTranslate(content, targetLang)) return null;
@@ -199,7 +171,6 @@ export async function safeTranslate(
         targetLang,
         engine,
         apiKeys,
-        isManual,
         customPrompt
     );
 
