@@ -6,6 +6,7 @@
 
 import { BATCH_ACCUMULATION_TIME_GEMINI, GEMINI_BATCH_SIZE } from "../constants";
 import { settings } from "../settings";
+import { batchTranslationTasks } from "../utils/batching";
 import { Logger } from "../utils/logger";
 import { globalProgressStore } from "../utils/progressStore";
 import { APIBreaker, setGeminiQuotaLock, showApiToast, showGeminiQuotaToast } from "./breaker";
@@ -15,11 +16,11 @@ import { translateBatchWithGemini } from "./gemini";
 import { aiRequestLimiters } from "./requestLimiter";
 
 function limitTask(task: TranslationTask, expire: () => void) {
-    const { resolve } = task;
+    const { resolve, reject } = task;
     let settled = false;
     const timer = setTimeout(() => {
         if (settled) return;
-        task.resolve("");
+        task.reject!(new Error("Translation timed out (20s)"));
         expire();
         showApiToast(task.engine, "Translation timed out (20s)");
     }, TRANSLATION_TIMEOUT_MS);
@@ -28,6 +29,13 @@ function limitTask(task: TranslationTask, expire: () => void) {
         settled = true;
         clearTimeout(timer);
         resolve(result);
+    };
+    task.reject = error => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        if (reject) reject(error);
+        else resolve("");
     };
 }
 
@@ -41,6 +49,7 @@ export interface TranslationTask {
     channelId: string;
     text: string;
     resolve: (res: string) => void;
+    reject?: (error: Error) => void;
     targetLang: string;
     apiKey: string;
     engine: string;
@@ -227,19 +236,7 @@ export class AiChannelWorker {
             const [targetLang, apiKey, engine, dmPrompt, model, endpoint] = JSON.parse(key) as string[];
             const reversedTasks = groupTasks.slice().reverse();
 
-            const chunks: TranslationTask[][] = [];
-            let currentChunk: TranslationTask[] = [];
-
-            for (const task of reversedTasks) {
-                if (currentChunk.length >= GEMINI_BATCH_SIZE) {
-                    chunks.push(currentChunk);
-                    currentChunk = [];
-                }
-                currentChunk.push(task);
-            }
-            if (currentChunk.length > 0) {
-                chunks.push(currentChunk);
-            }
+            const chunks = batchTranslationTasks(reversedTasks);
 
             for (const chunk of chunks) {
 
@@ -320,7 +317,7 @@ export class AiChannelWorker {
                         if (quotaKind) {
                             const until = setGeminiQuotaLock(apiKey, quotaKind);
                             showGeminiQuotaToast(quotaKind, until);
-                            this.reset();
+                            this.reset(new Error(errorMsg));
                             return;
                         }
 
@@ -328,7 +325,7 @@ export class AiChannelWorker {
                         const handledByBreaker = APIBreaker.reportError(engineType, apiKey, status, errorCode, errorMsg);
 
                         if (handledByBreaker) {
-                            this.reset();
+                            this.reset(new Error(errorMsg));
                             return;
                         } else if (isTimeout || isNetwork) {
                             showEngineToast(engineType, isTimeout ? "Timeout" : "Network error");
@@ -340,7 +337,7 @@ export class AiChannelWorker {
                         }
 
                         chunk.forEach(t => {
-                            t.resolve("");
+                            t.reject!(new Error(errorMsg));
                             if (this.registry.get(t.id) === t) {
                                 this.registry.delete(t.id);
                             }
@@ -388,19 +385,19 @@ export class AiChannelWorker {
         }
     }
 
-    private clearPendingTasks() {
-        this.registry.forEach(t => t.resolve(""));
+    private clearPendingTasks(error?: Error) {
+        this.registry.forEach(t => error && t.reject ? t.reject(error) : t.resolve(""));
         this.registry.clear();
     }
 
-    public reset() {
+    public reset(error?: Error) {
         this.generation++;
         if (this.timer) clearTimeout(this.timer);
         if (this.abortController) {
             this.abortController.abort();
             this.abortController = null;
         }
-        this.clearPendingTasks();
+        this.clearPendingTasks(error);
         this.state = "IDLE";
         if (aiWorkers.get(this.channelId) === this) aiWorkers.delete(this.channelId);
     }

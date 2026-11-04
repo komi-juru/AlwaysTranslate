@@ -89,3 +89,20 @@ body.bat-translating-active * {
 .bat-settings-field-label { margin-bottom: 6px; }
 .bat-settings-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin: 16px 0 8px; }
 
+
+.bat-translation-retry {
+    display: block;
+    margin-top: 4px;
+    padding: 0;
+    border: 0;
+    background: none;
+    color: var(--text-muted);
+    font: inherit;
+    font-size: 12px;
+    cursor: pointer;
+}
+.bat-translation-retry:hover,
+.bat-translation-retry:focus-visible {
+    color: var(--text-normal);
+    text-decoration: underline;
+}

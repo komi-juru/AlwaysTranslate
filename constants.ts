@@ -8,6 +8,7 @@ export const CACHE_MAX_SIZE = 1000;
 export const CACHE_PERSISTENT_MAX_SIZE = 50000;
 export const CACHE_SAVE_DEBOUNCE = 5000; // ms
 export const GEMINI_BATCH_SIZE = 1000;
+export const MAX_TRANSLATION_CHARS = 6000;
 export const GEMINI_TEMPERATURE = 0.3;
 export const BATCH_ACCUMULATION_TIME_GEMINI = 200; // ms – debounce interval per new message
 

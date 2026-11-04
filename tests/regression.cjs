@@ -6,7 +6,7 @@ const { test } = require("node:test");
 const ts = require(process.env.ALWAYS_TRANSLATE_TYPESCRIPT || "typescript");
 const root = path.resolve(__dirname, "..");
 const tick = () => new Promise(resolve => setImmediate(resolve));
-const deferred = () => { let resolve; const promise = new Promise(r => { resolve = r; }); return { promise, resolve }; };
+const deferred = () => { let resolve, reject; const promise = new Promise((r, j) => { resolve = r; reject = j; }); return { promise, resolve, reject }; };
 
 test("API errors distinguish credentials, permissions, balance, quota, service and malformed responses", () => {
     const { describeApiError, httpError } = environment().load("api/errors.ts");
@@ -72,7 +72,7 @@ function environment(extra = {}) {
         "api/breaker.ts": { APIBreaker: { reportError: () => false }, getGeminiActiveQuotaLock: () => null, showApiToast() {}, setGeminiQuotaLock() {}, showGeminiQuotaToast() {} },
         "api/gemini.ts": { translateBatchWithGemini: async (_, messages) => messages.map(m => ({ id: m.id, text: "translated:" + m.text })) },
         "api/deepseek.ts": { translateBatchWithDeepSeek: async (_, messages) => messages.map(m => ({ id: m.id, text: "translated:" + m.text })) },
-        "@webpack/common": {},
+        "@webpack/common": { useRef: value => ({ current: value }) },
         "electron": { app: { getPath: () => "/unused" } }
     };
     const modules = new Map();
@@ -361,7 +361,7 @@ test("outgoing translation cancels on failure or stop; preview-off replaces text
 test("automatic rendering follows channel engines and scope and retains own outgoing originals", () => {
     const e = environment({ translationEngine: "deepseek", targetLang: "ko", skipOwnMessages: true,
         manualTranslationEngine: "gemini", channelList: [] });
-    let execution, allowed = true, engine;
+    let execution, allowed = true, engine, failure = null, retries = 0;
     e.mocks["settings.ts"].settings.use = () => e.store;
     e.mocks["settings.ts"].getChannelConfig = () => ({ allowed, config: engine ? { engine } : null });
     e.mocks["@components/ErrorBoundary"] = { wrap: fn => fn };
@@ -373,7 +373,7 @@ test("automatic rendering follows channel engines and scope and retains own outg
     e.mocks["components/LoadingIndicator.ts"] = { LoadingIndicator() {} };
     e.mocks["hooks/useMessageVisibility.ts"] = { useMessageVisibility() {} };
     e.mocks["hooks/useTranslationExecution.ts"] = { useTranslationExecution: props => {
-        execution = props; return { translatedText: props.cachedTranslated ?? "translated", isTranslating: false };
+        execution = props; return { translatedText: failure ? null : props.cachedTranslated ?? "translated", isTranslating: false, error: failure, retry: () => { retries++; } };
     } };
     e.mocks["utils/cache.ts"] = { TranslationCache: { getInstance: () => ({
         peek: key => key.includes('"gemini"') ? "old manual translation" : undefined,
@@ -388,6 +388,10 @@ test("automatic rendering follows channel engines and scope and retains own outg
     engine = "deepseek"; allowed = false; assert.equal(TranslationAccessory({ message }), null); assert.equal(execution.allowed, false);
     allowed = true; message.author.id = "me"; assert.ok(TranslationAccessory({ message }));
     assert.equal(execution.skipMessage, true); assert.equal(execution.cachedTranslated, "my original message");
+    message.author.id = "other"; failure = "API rate limit exceeded";
+    const retryButton = TranslationAccessory({ message });
+    assert.equal(retryButton.type, "button"); assert.equal(retryButton.props.title, failure);
+    assert.equal(retryButton.props.className, "bat-translation-retry"); retryButton.props.onClick(); assert.equal(retries, 1);
 });
 
 test("automatic execution skips excluded channels and disabled engines and shares pending work", async () => {
@@ -548,4 +552,159 @@ test("AI workers serialize arrivals within a channel while an earlier request is
     worker.enqueue(b); worker.flushNow(); await tick(); assert.equal(calls, 1);
     first.resolve(); assert.equal(await a.result, "a"); await tick();
     worker.flushNow(); assert.equal(await b.result, "b"); await tick(); assert.equal(calls, 2); assert.equal(worker.registry.size, 0);
+});
+
+
+function translationHookRunner(e, initialProps) {
+    const slots = []; let cursor = 0, effects = [], props = initialProps;
+    Object.assign(e.mocks["@webpack/common"], {
+        useState: initial => {
+            const i = cursor++;
+            if (!(i in slots)) slots[i] = typeof initial === "function" ? initial() : initial;
+            return [slots[i], value => { slots[i] = typeof value === "function" ? value(slots[i]) : value; }];
+        },
+        useRef: initial => { const i = cursor++; return slots[i] ??= { current: initial }; },
+        useEffect: (effect, deps) => {
+            const i = cursor++, previous = slots[i];
+            if (!previous || deps.some((value, index) => value !== previous.deps[index])) effects.push(() => {
+                previous?.cleanup?.(); slots[i] = { deps, cleanup: effect() };
+            });
+        }
+    });
+    const { useTranslationExecution } = e.load("hooks/useTranslationExecution.ts");
+    return {
+        render: (updates = {}) => {
+            props = { ...props, ...updates }; cursor = 0; effects = [];
+            const result = useTranslationExecution(props); effects.forEach(effect => effect()); return result;
+        },
+        unmount: () => slots.forEach(slot => slot?.cleanup?.())
+    };
+}
+
+function translationHookProps() {
+    return { messageId: "123456789012345678", channelId: "123", content: "hello", cacheKey: "v3:123:key",
+        currentEngine: "gemini", sourceLang: "auto", resolvedTarget: "ko", shouldTranslateContent: true,
+        allowed: true, skipMessage: false, cachedTranslated: undefined, cacheRevision: 0 };
+}
+
+test("failed messages retry once per click and replace their error with a successful translation", async () => {
+    const e = environment(), first = deferred(), second = deferred(), requests = [];
+    e.mocks["api/translate.ts"] = { safeTranslate: (...args) => { requests.push(args); return requests.length === 1 ? first.promise : second.promise; } };
+    const cache = e.load("utils/cache.ts").TranslationCache.getInstance();
+    cache.set("v3:123:other", "already translated", "gemini");
+    const runner = translationHookRunner(e, translationHookProps()); runner.render();
+    assert.equal(runner.render().isTranslating, true);
+    first.reject(Error("API rate limit exceeded")); await tick();
+    const failed = runner.render(); assert.equal(failed.error, "API rate limit exceeded"); assert.equal(failed.isTranslating, false);
+    failed.retry(); failed.retry(); runner.render(); assert.equal(requests.length, 2);
+    const loading = runner.render(); assert.equal(loading.error, null); assert.equal(loading.isTranslating, true);
+    second.resolve("안녕하세요"); await tick();
+    const succeeded = runner.render(); assert.equal(succeeded.error, null); assert.equal(succeeded.translatedText, "안녕하세요");
+    succeeded.retry(); runner.render(); assert.equal(requests.length, 2);
+    assert.deepEqual(requests.map(args => args[6]), ["123456789012345678", "123456789012345678"]);
+    assert.equal(cache.peek("v3:123:other"), "already translated"); await cache.flush(); runner.unmount();
+});
+
+test("cancellation and unchanged translations show no retry error; late failures never affect a new message", async () => {
+    const e = environment(), first = deferred(); let calls = 0;
+    e.mocks["api/translate.ts"] = { safeTranslate: () => ++calls === 1 ? first.promise : Promise.resolve(null) };
+    const runner = translationHookRunner(e, translationHookProps()); runner.render();
+    runner.render({ cacheKey: "v3:123:edited", content: "edited" });
+    first.reject(Error("old request failed")); await tick();
+    const current = runner.render(); assert.equal(current.error, null); assert.equal(current.translatedText, null);
+    runner.render({ allowed: false }); const disabled = runner.render(); disabled.retry(); runner.render(); assert.equal(calls, 2);
+    runner.unmount();
+});
+
+test("API failures propagate through the worker to message retries, including breaker resets", async () => {
+    for (const handled of [false, true]) {
+        const e = environment(); e.mocks["api/breaker.ts"].APIBreaker.reportError = () => handled;
+        e.mocks["api/gemini.ts"].translateBatchWithGemini = async () => { throw Error("Invalid API key"); };
+        const { safeTranslate } = e.load("api/translate.ts");
+        await assert.rejects(safeTranslate("hello", "auto", "ko", "gemini", { gemini: "key", deepseek: "" }, "123", ""), /Invalid API key/);
+        await tick(); assert.equal(e.load("api/worker.ts").aiWorkers.size, 0);
+        e.mocks["api/gemini.ts"].translateBatchWithGemini = async (_, messages) => messages.map(m => ({ id: m.id, text: "translated" }));
+        assert.equal(await safeTranslate("hello", "auto", "ko", "gemini", { gemini: "key", deepseek: "" }, "123", ""), "translated");
+    }
+});
+
+test("worker deadlines expose a timeout reason and release the request slot", async t => {
+    t.mock.timers.enable({ apis: ["setTimeout"] });
+    const e = environment(); let signal;
+    e.mocks["api/gemini.ts"].translateBatchWithGemini = (...args) => { signal = args[6]; return new Promise(() => {}); };
+    const { safeTranslate } = e.load("api/translate.ts");
+    const translating = safeTranslate("hello", "auto", "ko", "gemini", { gemini: "key", deepseek: "" }, "123", "");
+    const rejected = assert.rejects(translating, /timed out/); await tick();
+    t.mock.timers.tick(20000); await rejected; await tick(); assert.equal(signal.aborted, true);
+    assert.equal(e.load("api/worker.ts").aiWorkers.size, 0);
+});
+
+
+test("text splitting preserves paragraph and sentence separators, Unicode and protected tokens", () => {
+    const { splitTranslationText } = environment().load("utils/batching.ts");
+    const paragraph = "a".repeat(3000) + "\n\n" + "b".repeat(3500);
+    const sentence = "a".repeat(3500) + ". " + "b".repeat(3500);
+    const cases = [paragraph, sentence, "a".repeat(5999) + "😀" + "b".repeat(1000),
+        "a".repeat(5997) + "[token0]" + "b".repeat(1000), "x".repeat(13000), " ".repeat(8000) + "text", "short"];
+    for (const text of cases) {
+        const pieces = splitTranslationText(text);
+        assert.equal(pieces.map(p => p.text + p.separator).join(""), text);
+        assert.ok(pieces.every(p => p.text.length <= 6000));
+        assert.ok(pieces.every(p => !/[\uD800-\uDBFF]$/.test(p.text) && !/^[\uDC00-\uDFFF]/.test(p.text)));
+    }
+    assert.equal(splitTranslationText(paragraph)[0].separator, "\n\n");
+    assert.equal(splitTranslationText(sentence)[0].text, "a".repeat(3500) + ".");
+    assert.equal(splitTranslationText(cases[3])[1].text.startsWith("[token0]"), true);
+});
+
+test("batch packing respects both total characters and message count without splitting short messages", () => {
+    const { batchTranslationTasks } = environment().load("utils/batching.ts");
+    const tasks = [3000, 3000, 1, 5999, 6000].map((length, id) => ({ id, text: "x".repeat(length) }));
+    const batches = batchTranslationTasks(tasks);
+    assert.deepEqual(batches.map(b => b.length), [2, 2, 1]); assert.deepEqual(batches.flat(), tasks);
+    assert.ok(batches.every(b => b.reduce((total, task) => total + task.text.length, 0) <= 6000));
+    assert.deepEqual(batchTranslationTasks(tasks, 6000, 1).map(b => b.length), [1, 1, 1, 1, 1]);
+});
+
+test("workers cap each API batch at 6000 characters for both AI engines", async () => {
+    for (const engine of ["gemini", "deepseek"]) {
+        const e = environment(), requests = [];
+        e.mocks["api/" + engine + ".ts"][engine === "gemini" ? "translateBatchWithGemini" : "translateBatchWithDeepSeek"] = async (_, messages) => {
+            requests.push(messages); return messages.map(m => ({ id: m.id, text: "done" }));
+        };
+        const { AiChannelWorker } = e.load("api/worker.ts"), worker = new AiChannelWorker("123");
+        const tasks = [task("a", "a".repeat(4000)), task("b", "b".repeat(4000)), task("c", "c".repeat(4000))];
+        tasks.forEach(job => { job.engine = engine; worker.enqueue(job); }); worker.flushNow();
+        assert.deepEqual(await Promise.all(tasks.map(job => job.result)), ["done", "done", "done"]);
+        assert.equal(requests.length, 3); assert.ok(requests.every(batch => batch.reduce((sum, m) => sum + m.text.length, 0) <= 6000));
+    }
+});
+
+test("long message translations reassemble in source order and retain code and links", async () => {
+    for (const engine of ["gemini", "deepseek"]) {
+        const e = environment(), batches = [];
+        e.mocks["api/" + engine + ".ts"][engine === "gemini" ? "translateBatchWithGemini" : "translateBatchWithDeepSeek"] = async (_, messages, target, key, prompt) => {
+            assert.equal(target, "ko"); assert.equal(prompt, "keep tone"); batches.push(messages);
+            return messages.map(m => ({ id: m.id, text: m.text.toUpperCase() }));
+        };
+        const { safeTranslate } = e.load("api/translate.ts");
+        const text = "a".repeat(3500) + "\n\n" + "b".repeat(3500) + "\n" + "c".repeat(3500) + " \u0060code stays lowercase\u0060 https://example.test/path";
+        const result = await safeTranslate(text, "auto", "ko", engine, { gemini: "key", deepseek: "key" }, "123", "", "keep tone");
+        const expected = "A".repeat(3500) + "\n\n" + "B".repeat(3500) + "\n" + "C".repeat(3500) + " \u0060code stays lowercase\u0060 https://example.test/path";
+        assert.equal(result, expected); assert.ok(batches.length >= 2);
+        assert.ok(batches.every(batch => batch.reduce((sum, m) => sum + m.text.length, 0) <= 6000));
+    }
+});
+
+test("a failed long-message fragment rejects the complete translation without returning partial text", async () => {
+    const e = environment(); let calls = 0;
+    e.mocks["api/breaker.ts"].APIBreaker.reportError = () => true;
+    e.mocks["api/gemini.ts"].translateBatchWithGemini = async (_, messages) => {
+        if (++calls === 2) throw Error("second fragment failed");
+        return messages.map(m => ({ id: m.id, text: "partial translation" }));
+    };
+    const { safeTranslate } = e.load("api/translate.ts");
+    await assert.rejects(safeTranslate("a".repeat(4000) + "\n\n" + "b".repeat(4000), "auto", "ko", "gemini",
+        { gemini: "key", deepseek: "" }, "123", ""), /second fragment failed/);
+    assert.equal(calls, 2); await tick(); assert.equal(e.load("api/worker.ts").aiWorkers.size, 0);
 });

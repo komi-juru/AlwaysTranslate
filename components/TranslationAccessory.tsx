@@ -81,7 +81,7 @@ export const TranslationAccessory = ErrorBoundary.wrap(function TranslationAcces
     }
 
     // Execution Hook
-    const { translatedText, isTranslating } = useTranslationExecution({
+    const { translatedText, isTranslating, error, retry } = useTranslationExecution({
         messageId: message.id,
         channelId: message.channel_id,
         content: message.content,
@@ -110,6 +110,14 @@ export const TranslationAccessory = ErrorBoundary.wrap(function TranslationAcces
     // If channel is disabled or no translation yet, render nothing
     if (activeEngine === "disable") return null;
     if (!allowed) return null;
+    if (error && !isTranslating) {
+        return (
+            <button className="bat-translation-retry" type="button" title={error}
+                aria-label="번역 재시도" onClick={retry}>
+                번역 실패 <span aria-hidden="true">↻</span>
+            </button>
+        );
+    }
     if (!translatedText && !isTranslating) return null;
 
     const customColor = translationColor || "#9aff99";

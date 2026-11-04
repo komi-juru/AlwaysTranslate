@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: GPL-3.0-or-later
  */
 
-import { useEffect, useState } from "@webpack/common";
+import { useEffect, useRef, useState } from "@webpack/common";
 
 import { safeTranslate } from "../api/translate";
 import { TranslationCache } from "../utils/cache";
@@ -49,15 +49,23 @@ export function useTranslationExecution({
     const [translatedText, setTranslatedText] = useState<string | null>(cachedTranslated ?? null);
     const [isTranslating, setIsTranslating] = useState(false);
 
+    const [failure, setFailure] = useState<{ key: string; message: string } | null>(null);
+    const [retryVersion, setRetryVersion] = useState(0);
+    const inFlight = useRef(false);
+    const requestKey = cacheKey + ":" + messageId;
+
     // Sync state when a cached translation becomes available
     useEffect(() => {
         if (cachedTranslated && translatedText !== cachedTranslated) {
             setTranslatedText(cachedTranslated);
             setIsTranslating(false);
+            setFailure(null);
         }
     }, [cachedTranslated]);
 
     useEffect(() => {
+        setFailure(null);
+        inFlight.current = false;
         // If we already have the text from cache, we don't need to fetch
         if (cachedTranslated) {
             return;
@@ -75,6 +83,7 @@ export function useTranslationExecution({
             if (cancelled) return;
 
             setTranslatedText(null);
+            inFlight.current = true;
 
             const cache = TranslationCache.getInstance();
             const generation = cache.getGeneration(cacheKey);
@@ -100,8 +109,12 @@ export function useTranslationExecution({
                 if (!cancelled) setTranslatedText(result);
             } catch (e) {
                 Logger.warn("Translate", "Translation request failed", e);
+                if (!cancelled && cache.getGeneration(cacheKey) === generation) setFailure({ key: requestKey, message: e instanceof Error ? e.message : "Translation failed" });
             } finally {
-                if (!cancelled) setIsTranslating(false);
+                if (!cancelled) {
+                    inFlight.current = false;
+                    setIsTranslating(false);
+                }
             }
         };
 
@@ -109,9 +122,12 @@ export function useTranslationExecution({
 
         return () => {
             cancelled = true;
+            inFlight.current = false;
         };
     }, [
         cacheKey,
+        requestKey,
+        retryVersion,
         cacheRevision,
         content,
         allowed,
@@ -129,6 +145,13 @@ export function useTranslationExecution({
 
     return {
         translatedText,
-        isTranslating
+        isTranslating,
+        error: !translatedText && failure?.key === requestKey ? failure.message : null,
+        retry: () => {
+            if (inFlight.current || failure?.key !== requestKey || !allowed || skipMessage || !shouldTranslateContent || currentEngine === "disable") return;
+            inFlight.current = true;
+            setFailure(null);
+            setRetryVersion(version => version + 1);
+        }
     };
 }
