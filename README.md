@@ -89,11 +89,3 @@ pnpm build
 pnpm exec eslint src/userplugins/alwaysTranslate
 node --test src/userplugins/alwaysTranslate/tests/regression.cjs
 ```
-
-The regression tests use mocked APIs and storage; they do not send messages or consume API credits.
-
-Cache format v3 separates engines, models, channels, prompts, and text-processing options. Older translation caches are not reused because they lack this metadata; messages will be translated again as needed.
-
-AI requests run with up to two concurrent batches per engine. Gemini and DeepSeek have separate queues; cancelling queued work removes it without sending an API request. Batch responses must contain exactly one nonempty translation for each requested ID.
-
-Outgoing previews cancel the original send and replace the unchanged draft only while its channel is still selected. Changed drafts and plugin shutdown cancel the preview. Press Enter again to send the reviewed translation. Failed outgoing translations keep the original message unsent.
