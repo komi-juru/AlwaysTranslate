@@ -169,12 +169,12 @@ export async function safeTranslate(
     channelId?: string,
     messageId?: string,
     customPrompt?: string,
-    keepUnchanged = false
+    outgoing = false
 ): Promise<string | null> {
     if (!shouldTranslate(content, targetLang)) return null;
 
     // 1. Tokenize (Extract mentions, code blocks, emojis)
-    const { textToTranslate, tokens } = tokenizeText(content.trim(), settings.store.hideEmojis, settings.store.hideMentions);
+    const { textToTranslate, tokens } = tokenizeText(content.trim(), !outgoing && settings.store.hideEmojis, !outgoing && settings.store.hideMentions);
 
     const result = await translate(
         channelId || "",
@@ -188,7 +188,7 @@ export async function safeTranslate(
     );
 
     if (!result) return null;
-    if (result === textToTranslate) return keepUnchanged ? content : null;
+    if (result === textToTranslate) return outgoing ? content : null;
 
     // Restore tokens
     return restoreTokens(result, tokens);

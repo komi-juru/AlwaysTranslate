@@ -12,7 +12,7 @@ import { TranslationCache } from "../utils/cache";
 import { shouldTranslate } from "../utils/message";
 import { showTranslationToast } from "../utils/toast";
 import { clearDetectedLanguages, detectOutgoingLanguage } from "./detectLanguage";
-import { TRANSLATION_TIMEOUT_MS } from "./errors";
+import { describeApiError, TRANSLATION_TIMEOUT_MS } from "./errors";
 import { safeTranslate } from "./translate";
 
 const previews = new Map<string, { text: string; expires: number }>();
@@ -54,6 +54,21 @@ export function resetOutgoingTranslations() {
     document.body.classList.remove("bat-translating-active");
 }
 
+function isAlreadyTargetLanguage(text: string, target: string) {
+    const prose = text.replace(/<[^>]+>|https?:\/\/[^\s]+|```[\s\S]*?```|`[^`]+`/g, " ");
+    const letters = prose.match(/\p{L}/gu)?.join("") ?? "";
+    if (!letters) return false;
+    if (target === "en") return /^[a-z]+$/i.test(letters);
+    const scripts: Record<string, { native: RegExp; allowed: RegExp }> = {
+        ko: { native: /\p{Script=Hangul}/u, allowed: /^[\p{Script=Hangul}a-z]+$/iu },
+        ja: { native: /[\p{Script=Hiragana}\p{Script=Katakana}]/u, allowed: /^[\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Han}a-z]+$/iu },
+        ar: { native: /\p{Script=Arabic}/u, allowed: /^[\p{Script=Arabic}a-z]+$/iu },
+        el: { native: /\p{Script=Greek}/u, allowed: /^[\p{Script=Greek}a-z]+$/iu }
+    };
+    const script = scripts[target];
+    return !!script && script.native.test(letters) && script.allowed.test(letters);
+}
+
 export async function handleOutgoingTranslation(channelId: string, message: MessageObject, isActive: () => boolean) {
     if (!settings.store.translateOutgoing || !message.content) return;
     const { allowed, config } = getChannelConfig(channelId);
@@ -75,6 +90,7 @@ export async function handleOutgoingTranslation(channelId: string, message: Mess
     const engine = !config?.engine || config.engine === "default" ? translationEngine : config.engine;
     if (engine === "disable") return;
     if (targetLang === "auto" && !shouldTranslate(message.content, "und")) return;
+    if (isAlreadyTargetLanguage(message.content, targetLang)) return;
     if (targetLang !== "auto" && !shouldTranslate(message.content, targetLang)) return;
     if (pending.has(channelId)) return { cancel: true };
 
@@ -99,6 +115,7 @@ export async function handleOutgoingTranslation(channelId: string, message: Mess
                 return { cancel: true };
             }
             targetLang = language;
+            if (isAlreadyTargetLanguage(original, targetLang)) return;
             if (!shouldTranslate(original, targetLang)) return;
         }
         const result = await safeTranslate(original, "auto", targetLang, engine,
@@ -137,8 +154,12 @@ export async function handleOutgoingTranslation(channelId: string, message: Mess
         }, 0);
         previewInsertions.add(insertion);
         return { cancel: true };
-    } catch {
-        if (isActive() && !token.signal.aborted) showTranslationToast("Translation failed. Your message was not sent.");
+    } catch (error) {
+        if (isActive() && !token.signal.aborted) {
+            const details = error as { status?: number; code?: string; message?: string } | null;
+            const reason = describeApiError(details?.status ?? null, details?.code ?? null, details?.message ?? "");
+            showTranslationToast(`${reason}. Your message was not sent.`);
+        }
         return { cancel: true };
     } finally {
         if (pending.get(channelId) === token) pending.delete(channelId);

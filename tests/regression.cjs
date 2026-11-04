@@ -1348,3 +1348,56 @@ test("1000 mixed cache writes, deletions and save failures converge without stal
  assert.deepEqual([...stored].sort(),[...cache.persistentCache].map(([key,entry])=>[key,entry.value]).sort());
  assert.equal(cache.changes.size,0);assert.equal(cache.inFlightKeys.size,0);assert.equal(cache.saveTimeout,null);
 });
+
+
+test("English outgoing text bypasses translation immediately for English channels", async () => {
+ const e=outgoingEnvironment();
+ for(const text of ["Hello, how are you?", "I'm ready! 😀", 'Check https://example.test now']) {
+ const message={content:text};assert.equal(await e.handleOutgoingTranslation('123',message,()=>true),undefined);assert.equal(message.content,text);
+ }
+ assert.equal(e.calls,0);
+ const pending=e.handleOutgoingTranslation('123',{content:'안녕하세요'},()=>true);assert.equal(e.calls,1);e.pending.resolve('Hello');await pending;e.resetOutgoingTranslations();
+});
+
+
+test("outgoing language bypass handles Japanese and Korean with English abbreviations", async () => {
+ for(const [lang,text] of [['ja','今日はDiscordで遊びます！'],['ko','오늘 Discord에서 만나자'],['ar','مرحبا Discord'],['el','Καλημέρα Discord']]){
+ const e=outgoingEnvironment();e.store.channelList=[{id:'123',lang}];
+ assert.equal(await e.handleOutgoingTranslation('123',{content:text},()=>true),undefined);assert.equal(e.calls,0);
+ }
+ const e=outgoingEnvironment();e.store.channelList=[{id:'123',lang:'ja'}];
+ const result=e.handleOutgoingTranslation('123',{content:'오늘 만나요'},()=>true);assert.equal(e.calls,1);e.pending.resolve('今日は会いましょう');await result;e.resetOutgoingTranslations();
+});
+
+
+test("outgoing messages preserve mentions and emojis regardless of appearance settings", async () => {
+ for(const engine of ['gemini','deepseek'])for(const preview of [false,true]){
+ const e=environment({translateOutgoing:true,previewOutgoing:preview,translationEngine:engine,hideEmojis:true,hideMentions:true,channelList:[{id:'123',lang:'en'}]});
+ const original='<@123> <@&456> 안녕하세요 😀 <:wave:789>',notices=[];let draft=original;
+ Object.assign(e.mocks['@webpack/common'],{DraftType:{ChannelMessage:0},DraftStore:{getDraft:()=>draft,addChangeListener(){},removeChangeListener(){}},SelectedChannelStore:{getChannelId:()=> '123'},ReactDOM:{flushSync:fn=>fn()},ComponentDispatch:{dispatchToLastSubscribed:(event,data)=>{draft=event==='CLEAR_TEXT'?'':draft+data.rawText;}}});
+ e.mocks['utils/toast.ts']={showTranslationToast:text=>notices.push(text)};
+ const api=engine==='gemini'?'translateBatchWithGemini':'translateBatchWithDeepSeek';
+ e.mocks['api/'+engine+'.ts'][api]=async(_,messages)=>messages.map(m=>({id:m.id,text:m.text.replace('안녕하세요','Hello')}));
+ const outgoing=e.load('api/outgoing.ts'),message={content:original};
+ const outcome=await outgoing.handleOutgoingTranslation('123',message,()=>true);
+ if(preview){assert.deepEqual(outcome,{cancel:true});await new Promise(resolve=>setTimeout(resolve,5));assert.equal(draft,original.replace('안녕하세요','Hello'));}
+ else {assert.equal(outcome,undefined);assert.equal(message.content,original.replace('안녕하세요','Hello'));}
+ assert.deepEqual(notices,[]);outgoing.resetOutgoingTranslations();await e.load('utils/cache.ts').TranslationCache.getInstance().flush();
+ }
+});
+
+
+test("outgoing failures explain their cause while preserving the unsent message", async () => {
+ for(const [error,expected] of [
+ [Error('Invalid API response: missing translations'),'missing translations'],
+ [Error('Invalid API key'),'Invalid API key'],
+ [Error('Translation timed out (20s)'),'timed out'],
+ [Error('Network connection failed'),'Network'],
+ [Error('Invalid translation: missing protected content'),'placeholder'],
+ [Object.assign(Error('denied'),{status:403}),'Access denied']]){
+ const e=outgoingEnvironment(),message={content:'안녕하세요'};
+ const pending=e.handleOutgoingTranslation('123',message,()=>true);e.pending.reject(error);
+ assert.deepEqual(await pending,{cancel:true});assert.equal(message.content,'안녕하세요');
+ assert.ok(e.notices.some(notice=>notice.includes(expected)));assert.ok(e.notices.some(notice=>notice.includes('not sent')));
+ }
+});
