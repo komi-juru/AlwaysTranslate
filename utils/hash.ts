@@ -4,6 +4,7 @@
  * SPDX-License-Identifier: GPL-3.0-or-later
  */
 
+import { TRANSLATION_PROMPT_REVISION } from "../api/geminiPrompt";
 import { getChannelConfig, settings } from "../settings";
 
 export function getCacheKey(
@@ -23,7 +24,7 @@ export function getCacheKey(
     return getChannelCachePrefix(channelId) + JSON.stringify([
         engine, model, endpoint, sourceLang, targetLang, config?.aiCustomPrompt || "",
         settings.store.hideEmojis,
-        settings.store.hideMentions, sourceText
+        settings.store.hideMentions, sourceText, TRANSLATION_PROMPT_REVISION
     ]);
 }
 
