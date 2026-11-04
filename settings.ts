@@ -33,10 +33,6 @@ export const settings = definePluginSettings({
         name: "GitHub Link",
         component: (): ReactNode => null,
     },
-    ui_overview: {
-        type: OptionType.COMPONENT,
-        component: (): ReactNode => null,
-    },
     header_translation: {
         type: OptionType.COMPONENT,
         component: (): ReactNode => null,
@@ -62,7 +58,7 @@ export const settings = definePluginSettings({
     translationEngine: {
         type: OptionType.SELECT,
         default: "gemini",
-        displayName: "Default automatic engine",
+        displayName: "Default translation engine",
         description: "Default engine. Channel overrides apply separately.",
         options: GLOBAL_ENGINE_OPTIONS.map(o => ({ ...o, label: o.value === "disable" ? "Off" : o.label, default: o.value === "gemini" })),
     },

@@ -108,3 +108,9 @@ body.bat-translating-active * {
 }
 
 .bat-loading-count { font-size: 10px; opacity: 0.6; margin-left: 4px; font-family: monospace; user-select: none; }
+
+.bat-channel-group { margin: 12px 0; color: var(--text-normal); }
+.bat-channel-group > summary { font-weight: 600; padding: 10px 0; cursor: pointer; }
+.bat-channel-entry { margin-left: 12px; border-bottom: 1px solid var(--background-modifier-accent); }
+.bat-channel-entry > summary { padding: 10px 4px; cursor: pointer; overflow-wrap: anywhere; }
+.bat-channel-detail { display: flex; flex-direction: column; gap: 10px; padding: 8px 4px 16px; }

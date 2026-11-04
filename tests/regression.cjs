@@ -1401,3 +1401,19 @@ test("outgoing failures explain their cause while preserving the unsent message"
  assert.ok(e.notices.some(notice=>notice.includes(expected)));assert.ok(e.notices.some(notice=>notice.includes('not sent')));
  }
 });
+
+
+test("channel manager expands groups and channel details", () => {
+ const e=environment({channelList:[{id:'123456789012345678',lang:'ja'},{id:'223456789012345678',lang:'en'}]});
+ for(const [key,name]of [['@components/Button','Button'],['@components/Divider','Divider'],['@components/Heading','Heading'],['@components/Text','Text']])e.mocks[key]={[name]:name};
+ e.mocks['react/jsx-runtime']={jsx:(type,props)=>({type,props}),jsxs:(type,props)=>({type,props})};
+ e.mocks['utils/toast.ts']={showTranslationToast(){}};Object.assign(e.mocks['settings.ts'],{addChannel(){},updateChannel(){},removeChannel(){}});e.mocks['settings.ts'].settings.use=()=>e.store;
+ const slots=[];let cursor=0;
+ Object.assign(e.mocks['@webpack/common'],{useState:initial=>{const i=cursor++;if(!(i in slots))slots[i]=initial;return[slots[i],value=>slots[i]=typeof value==='function'?value(slots[i]):value];},useEffect(){},useStateFromStores:(_,fn)=>fn(),SelectedChannelStore:{getChannelId:()=> '123456789012345678'},ChannelStore:{getChannel:id=>id.startsWith('1')?{name:'general',guild_id:'guild'}:{name:'Alice'},getSortedPrivateChannels:()=>[],getMutableGuildChannelsForGuild:()=>({})},GuildStore:{getGuild:()=>({name:'Test server'}),getGuilds:()=>({})},UserStore:{},TextInput:'TextInput',SearchableSelect:'Select'});
+ const {ChannelManager}=e.load('components/ChannelManager.tsx'),render=()=>{cursor=0;return ChannelManager();};
+ const nodes=value=>!value||typeof value!=='object'?[]:Array.isArray(value)?value.flatMap(nodes):[value,...nodes(value.props?.children)];
+ let tree=render();assert.equal(nodes(tree).filter(n=>n.type==='details').length,2);
+ nodes(tree).find(n=>n.type==='details'&&n.props.children[0].props.children[0]==='Test server').props.onToggle({currentTarget:{open:true}});tree=render();
+ nodes(tree).find(n=>n.props?.id==='bat-channel-123456789012345678').props.onToggle({currentTarget:{open:true}});tree=render();
+ assert.ok(nodes(tree).some(n=>n.props?.id==='bat-channel-123456789012345678'));assert.ok(nodes(tree).some(n=>n.props?.children==='Translation engine'));
+});

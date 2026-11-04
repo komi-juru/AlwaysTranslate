@@ -19,7 +19,6 @@ import { ClearCacheButton } from "./components/ClearCacheButton";
 import { ColorPickerInput } from "./components/ColorPickerInput";
 import { GithubLinkInjector } from "./components/GithubLinkInjector";
 import { TranslateHeaderButton } from "./components/HeaderBarIcon";
-import { SettingsOverview } from "./components/SettingsOverview";
 import { SettingsPresets } from "./components/SettingsPresets";
 import { TranslationAccessory } from "./components/TranslationAccessory";
 import { normalizeTranslationEngines, settings } from "./settings";
@@ -35,7 +34,6 @@ const SettingsHeader = ({ title }: { title: string }) => (
 
 // Wire up dynamic COMPONENT settings (avoids circular imports)
 settings.def.ui_githubLink.component = GithubLinkInjector;
-settings.def.ui_overview.component = () => <SettingsOverview />;
 settings.def.header_translation.component = () => <SettingsHeader title="Translation" />;
 settings.def.header_management.component = () => <SettingsHeader title="Channels & Outgoing Messages" />;
 settings.def.header_design.component = () => <SettingsHeader title="Appearance" />;

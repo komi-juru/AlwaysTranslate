@@ -28,9 +28,8 @@ export interface PartialChannel {
 }
 
 export function ChannelManager() {
-    const [query, setQuery] = useState("");
+    const [expandedGroups, setExpandedGroups] = useState<string[]>([]);
     const [selectedChannel, setSelectedChannel] = useState<string | undefined>();
-    const [showIdInput, setShowIdInput] = useState(false);
     const [expandedChannels, setExpandedChannels] = useState<string[]>([]);
     const { channelList: channels = [], translationMode = "global", translationEngine = "gemini" } = settings.use(["channelList", "translationMode", "translationEngine"]);
 
@@ -44,7 +43,7 @@ export function ChannelManager() {
         if (dCh && dCh.guild_id) {
             const guildId = dCh.guild_id;
             if (!groupedChannels[guildId]) {
-                const guildName = GuildStore.getGuild?.(guildId)?.name || `Unknown Guild (${guildId})`;
+                const guildName = GuildStore.getGuild?.(guildId)?.name || "Unavailable server";
                 groupedChannels[guildId] = { guildName, channels: [] };
             }
             groupedChannels[guildId].channels.push(ch);
@@ -132,7 +131,6 @@ export function ChannelManager() {
         }
 
         addCh(cleanId, "auto");
-        setQuery("");
         setSelectedChannel(undefined);
     };
 
@@ -146,7 +144,7 @@ export function ChannelManager() {
                 if (users.length > 0) return users.map((u: { globalName?: string; username?: string }) => u.globalName || u.username).join(", ");
             }
         } catch { /* noop */ }
-        return id;
+        return "Unavailable channel";
     };
 
     const engineOpts = CHANNEL_ENGINE_OPTIONS.map(opt => {
@@ -190,134 +188,55 @@ export function ChannelManager() {
                         </div>
                     </div>
 
-                    <Button size="small" variant="secondary" onClick={() => setShowIdInput(!showIdInput)}>
-                        {showIdInput ? "Close channel ID" : "Add by channel ID"}
-                    </Button>
-
-                    {showIdInput && (
-                        <div style={{ display: "flex", gap: "8px", alignItems: "center", flexWrap: "wrap" }}>
-                            <div style={{ flex: "1 1 200px", maxWidth: "300px" }}>
-                                <TextInput
-                                    placeholder="Enter raw Channel or DM ID..."
-                                    value={query}
-                                    onChange={setQuery}
-                                />
-                            </div>
-                            <Button
-                                onClick={() => handleAdd(query)}
-                                disabled={!query.trim()}
-                                variant="positive"
-                            >
-                                Add
-                            </Button>
-                        </div>
-                    )}
                 </div>
             </div>
 
             <Divider style={{ marginTop: "16px", marginBottom: "16px" }} />
 
-            <div>
-                {activeChannels.length === 0 ? (
-                    <FormText>
-                        {translationMode === "global"
-                            ? "No channel overrides."
-                            : "No channels added."}
-                    </FormText>
-                ) : (
-                    <div style={{ display: "flex", flexDirection: "column", gap: "24px", marginTop: "8px" }}>
-                        {sortedGroups.map(([guildId, { guildName, channels }]) => (
-                            <div key={guildId} style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
-                                <div style={{ fontWeight: 600, color: "var(--header-primary)", fontSize: "16px", paddingBottom: "4px", borderBottom: "1px solid var(--background-modifier-accent)" }}>
-                                    {guildName}
-                                </div>
-                                <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
-                                    {channels.map((ch: PartialChannel) => (
-                                        <div key={ch.id} style={{ display: "flex", flexDirection: "column", gap: "8px", padding: "12px 0", borderBottom: "1px solid var(--background-modifier-accent)" }}>
-                                            <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", justifyContent: "space-between", gap: "12px" }}>
-                                    <div style={{ flex: "1 1 auto", minWidth: 0, marginRight: "16px" }}>
-                                        <div style={{ fontWeight: 600, color: "var(--text-normal)", marginBottom: "2px", padding: "2px 0", lineHeight: "1.3", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-                                            {getChannelName(ch.id)}
-                                        </div>
-                                        <div style={{ fontSize: "12px", color: "var(--text-muted)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-                                            ID: {ch.id}
-                                        </div>
+            {!activeChannels.length && <FormText>No channels added.</FormText>}
+            {sortedGroups.map(([guildId, group]) => {
+                return <details key={guildId} className="bat-channel-group" open={expandedGroups.includes(guildId)}
+                    onToggle={event => {
+                        const { open } = event.currentTarget;
+                        setExpandedGroups(ids => open ? ids.includes(guildId) ? ids : [...ids, guildId] : ids.filter(id => id !== guildId));
+                    }}>
+                    <summary>{group.guildName} · {group.channels.length}</summary>
+                    {(expandedGroups.includes(guildId)) && group.channels.map(ch => {
+                        const engine = !ch.engine || ch.engine === "default" ? translationEngine : ch.engine;
+                        const engineName = GLOBAL_ENGINE_OPTIONS.find(option => option.value === engine)?.label ?? engine;
+                        const language = LANGUAGES.find(option => option.value === (ch.lang ?? "auto"))?.label ?? ch.lang;
+                        return <details key={ch.id} id={"bat-channel-" + ch.id} className="bat-channel-entry" open={expandedChannels.includes(ch.id)}
+                            onToggle={event => {
+                                const { open } = event.currentTarget;
+                                setExpandedChannels(ids => open ? ids.includes(ch.id) ? ids : [...ids, ch.id] : ids.filter(id => id !== ch.id));
+                            }}>
+                            <summary title={getChannelName(ch.id) + " · " + engineName + " · " + language}>
+                                {getChannelName(ch.id)} · {engineName} · {language}
+                            </summary>
+                            {expandedChannels.includes(ch.id) && <div className="bat-channel-detail">
+                                <div className="bat-channel-controls">
+                                    <div><div className="bat-settings-field-label">Translation engine</div>
+                                        <SearchableSelect value={ch.engine ?? "default"} options={engineOpts}
+                                            onChange={(value: string) => updateChannel(ch.id, { engine: value === "default" ? undefined : value })} />
                                     </div>
-
-                                    <div className="bat-channel-controls">
-                                        {(
-                                            <>
-                                                <div style={{ minWidth: 0 }}>
-                                                    <div className="bat-settings-field-label">Automatic engine</div>
-                                                    <SearchableSelect
-                                                        value={ch.engine ?? "default"}
-                                                        options={engineOpts}
-                                                        onChange={(val: string) => {
-                                                            updateChannel(ch.id, { engine: val === "default" ? undefined : val });
-                                                        }}
-                                                        placeholder="Engine"
-                                                        popoutPosition="left"
-                                                    />
-                                                </div>
-
-                                                <div style={{ minWidth: 0 }}>
-                                                    <div className="bat-settings-field-label">Channel language</div>
-                                                    <SearchableSelect
-                                                        value={ch.lang}
-                                                        options={[...LANGUAGES]}
-                                                        onChange={(val: string) => updateChannel(ch.id, { lang: val })}
-                                                        placeholder="Channel language"
-                                                        popoutPosition="left"
-                                                    />
-                                                </div>
-                                            </>
-                                        )}
-
-                                        <div style={{ display: "contents" }}>
-                                            <Button size="small" variant="secondary" onClick={() => setExpandedChannels(ids => ids.includes(ch.id) ? ids.filter(id => id !== ch.id) : [...ids, ch.id])}>
-                                                {expandedChannels.includes(ch.id) ? "Close prompts" : "Edit prompts"}
-                                            </Button>
-                                            <Button
-                                                variant="dangerPrimary"
-                                                size="small"
-                                                onClick={() => removeCh(ch.id)}
-                                            >
-                                                Remove
-                                            </Button>
-                                        </div>
+                                    <div><div className="bat-settings-field-label">Channel language</div>
+                                        <SearchableSelect value={ch.lang ?? "auto"} options={[...LANGUAGES]}
+                                            onChange={(value: string) => updateChannel(ch.id, { lang: value })} />
                                     </div>
                                 </div>
-
-                                            {expandedChannels.includes(ch.id) && (
-                                                <div style={{ marginTop: "8px" }}>
-                                                    <div style={{ fontSize: "12px", fontWeight: 600, color: "var(--text-muted)", marginBottom: "4px" }}>
-                                                        Incoming prompt
-                                                    </div>
-                                                    <TextInput
-                                                        value={ch.aiCustomPrompt ?? ""}
-                                                        onChange={(val: string) => updateChannel(ch.id, { aiCustomPrompt: val || undefined })}
-                                                        placeholder="e.g. Keep the original tone."
-                                                        style={{ width: "100%" }}
-                                                    />
-                                                    <div style={{ fontSize: "12px", fontWeight: 600, color: "var(--text-muted)", marginTop: "12px", marginBottom: "4px" }}>
-                                                        Outgoing prompt
-                                                    </div>
-                                                    <TextInput
-                                                        value={ch.outgoingCustomPrompt ?? ""}
-                                                        onChange={(val: string) => updateChannel(ch.id, { outgoingCustomPrompt: val || undefined })}
-                                                        placeholder="e.g. Use a friendly tone."
-                                                        style={{ width: "100%" }}
-                                                    />
-                                                </div>
-                                            )}
-                                        </div>
-                                    ))}
-                                </div>
-                            </div>
-                        ))}
-                    </div>
-                )}
-            </div>
+                                <div className="bat-settings-field-label">Incoming prompt</div>
+                                <TextInput value={ch.aiCustomPrompt ?? ""} onChange={(value: string) => updateChannel(ch.id, { aiCustomPrompt: value || undefined })} />
+                                <div className="bat-settings-field-label">Outgoing prompt</div>
+                                <TextInput value={ch.outgoingCustomPrompt ?? ""} onChange={(value: string) => updateChannel(ch.id, { outgoingCustomPrompt: value || undefined })} />
+                                <Button size="small" variant="dangerPrimary" onClick={() => {
+                                    removeCh(ch.id);
+                                    setExpandedChannels(ids => ids.filter(id => id !== ch.id));
+                                }}>Remove</Button>
+                            </div>}
+                        </details>;
+                    })}
+                </details>;
+            })}
         </section>
     );
 }
