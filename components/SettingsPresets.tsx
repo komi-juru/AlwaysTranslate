@@ -1,10 +1,12 @@
+import { Heading as FormTitle } from "@components/Heading";
+import { Text as FormText } from "@components/Text";
 /*
  * Vencord, a Discord client mod
  * Copyright (c) 2026 Vendicated and contributors
  * SPDX-License-Identifier: GPL-3.0-or-later
  */
 
-import { Forms, SearchableSelect, TextInput } from "@webpack/common";
+import { SearchableSelect, TextInput } from "@webpack/common";
 
 import { reScheduleAllWorkers } from "../api/translate";
 import { settings } from "../settings";
@@ -27,8 +29,8 @@ export function SettingsPresets() {
 
     return (
         <section className="bat-settings-section">
-            <Forms.FormTitle>Translation timing</Forms.FormTitle>
-            <Forms.FormText>Gemini and DeepSeek batching.</Forms.FormText>
+            <FormTitle>Translation timing</FormTitle>
+            <FormText>Gemini and DeepSeek batching.</FormText>
             <div style={{ marginTop: 8 }}>
                 <SearchableSelect
                     value={current?.name ?? "Custom"}
@@ -41,21 +43,21 @@ export function SettingsPresets() {
             </div>
             <div className="bat-settings-fields">
                 <div>
-                    <Forms.FormTitle>Messages</Forms.FormTitle>
+                    <FormTitle>Messages</FormTitle>
                     <TextInput type="number" value={String(threshold)} onChange={(value: string) => {
                         const count = Number(value);
                         if (value && Number.isInteger(count) && count >= 1 && count <= 1000) update(count, wait);
                     }} />
                 </div>
                 <div>
-                    <Forms.FormTitle>Wait (seconds)</Forms.FormTitle>
+                    <FormTitle>Wait (seconds)</FormTitle>
                     <TextInput type="number" value={String(wait)} onChange={(value: string) => {
                         const seconds = Number(value);
                         if (value && Number.isInteger(seconds) && seconds >= 0 && seconds <= 300) update(threshold, seconds);
                     }} />
                 </div>
             </div>
-            <Forms.FormText>0 seconds: wait for the message count.</Forms.FormText>
+            <FormText>0 seconds: wait for the message count.</FormText>
         </section>
     );
 }

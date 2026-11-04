@@ -1,3 +1,6 @@
+import { Button } from "@components/Button";
+import { Heading as FormTitle } from "@components/Heading";
+import { Text as FormText } from "@components/Text";
 /*
  * Vencord, a Discord client mod
  * Copyright (c) 2026 Vendicated and contributors
@@ -5,7 +8,7 @@
  */
 
 import { Divider } from "@components/Divider";
-import { Button, ChannelStore, Forms, GuildStore, SearchableSelect, TextInput, UserStore, useState, useStateFromStores } from "@webpack/common";
+import { ChannelStore, GuildStore, SearchableSelect, TextInput, UserStore, useState, useStateFromStores } from "@webpack/common";
 
 import { showTranslationToast } from "../utils/toast";
 import { CHANNEL_ENGINE_OPTIONS, GLOBAL_ENGINE_OPTIONS, LANGUAGES } from "../constants";
@@ -156,16 +159,16 @@ export function ChannelManager() {
 
     return (
         <section style={{ marginTop: 16 }}>
-            <Forms.FormTitle>
+            <FormTitle>
                 {translationMode === "global" ? "Channel-specific settings" : "Selected channels"}
-            </Forms.FormTitle>
-            <Forms.FormText>
+            </FormTitle>
+            <FormText>
                 {translationMode === "global"
                     ? "Set an engine, language and prompts per channel."
                     : "Only listed channels are translated automatically."}
                 <br />
                 Channel language: their language. Auto detects incoming text only.
-            </Forms.FormText>
+            </FormText>
 
             <Divider style={{ marginTop: "16px", marginBottom: "16px" }} />
 
@@ -187,8 +190,7 @@ export function ChannelManager() {
                         </div>
                     </div>
 
-                    <Button size={Button.Sizes.SMALL} color={Button.Colors.PRIMARY}
-                        look={Button.Looks.FILLED} onClick={() => setShowIdInput(!showIdInput)}>
+                    <Button size="small" variant="secondary" onClick={() => setShowIdInput(!showIdInput)}>
                         {showIdInput ? "Close channel ID" : "Add by channel ID"}
                     </Button>
 
@@ -204,7 +206,7 @@ export function ChannelManager() {
                             <Button
                                 onClick={() => handleAdd(query)}
                                 disabled={!query.trim()}
-                                color={Button.Colors.GREEN}
+                                variant="positive"
                             >
                                 Add
                             </Button>
@@ -217,11 +219,11 @@ export function ChannelManager() {
 
             <div>
                 {activeChannels.length === 0 ? (
-                    <Forms.FormText>
+                    <FormText>
                         {translationMode === "global"
                             ? "No channel overrides."
                             : "No channels added."}
-                    </Forms.FormText>
+                    </FormText>
                 ) : (
                     <div style={{ display: "flex", flexDirection: "column", gap: "24px", marginTop: "8px" }}>
                         {sortedGroups.map(([guildId, { guildName, channels }]) => (
@@ -272,13 +274,12 @@ export function ChannelManager() {
                                         )}
 
                                         <div style={{ display: "contents" }}>
-                                            <Button size={Button.Sizes.SMALL} color={Button.Colors.PRIMARY} look={Button.Looks.FILLED} onClick={() => setExpandedChannels(ids => ids.includes(ch.id) ? ids.filter(id => id !== ch.id) : [...ids, ch.id])}>
+                                            <Button size="small" variant="secondary" onClick={() => setExpandedChannels(ids => ids.includes(ch.id) ? ids.filter(id => id !== ch.id) : [...ids, ch.id])}>
                                                 {expandedChannels.includes(ch.id) ? "Close prompts" : "Edit prompts"}
                                             </Button>
                                             <Button
-                                                color={Button.Colors.RED}
-                                                look={Button.Looks.FILLED}
-                                                size={Button.Sizes.SMALL}
+                                                variant="dangerPrimary"
+                                                size="small"
                                                 onClick={() => removeCh(ch.id)}
                                             >
                                                 Remove

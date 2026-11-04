@@ -4,10 +4,8 @@
  * SPDX-License-Identifier: GPL-3.0-or-later
  */
 
-import { Toasts } from "@webpack/common";
+import { showToast } from "@webpack/common";
 
 export function showTranslationToast(text: string, variant: "critical" | "success" = "critical") {
-    const type = variant === "success" ? Toasts.Type.SUCCESS : Toasts.Type.FAILURE;
-    const toast = { ...Toasts.create(text, type), text, variant };
-    Toasts.show(toast);
+    showToast({ text, variant });
 }

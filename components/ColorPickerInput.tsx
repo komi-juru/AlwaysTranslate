@@ -1,10 +1,12 @@
+import { Heading as FormTitle } from "@components/Heading";
+import { Text as FormText } from "@components/Text";
 /*
  * Vencord, a Discord client mod
  * Copyright (c) 2026 Vendicated and contributors
  * SPDX-License-Identifier: GPL-3.0-or-later
  */
 
-import { ColorPicker, Forms } from "@webpack/common";
+import { ColorPicker } from "@webpack/common";
 
 import { settings } from "../settings";
 
@@ -25,10 +27,10 @@ export function ColorPickerInput() {
 
     return (
         <section style={{ marginBottom: "20px" }}>
-            <Forms.FormTitle>Translation Color</Forms.FormTitle>
-            <Forms.FormText style={{ marginBottom: "8px" }}>
+            <FormTitle>Translation Color</FormTitle>
+            <FormText style={{ marginBottom: "8px" }}>
                 Pick the text color for translated messages
-            </Forms.FormText>
+            </FormText>
             <ColorPicker
                 suggestedColors={["#9aff99", "#ffffff", "#ff0000", "#ffff00", "#00ffff", "#ff00ff"]}
                 color={numColor}

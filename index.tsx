@@ -8,29 +8,28 @@ import "./styles.css";
 
 import { addMessageAccessory, removeMessageAccessory } from "@api/MessageAccessories";
 import { Divider } from "@components/Divider";
+import { Heading as FormTitle } from "@components/Heading";
 import definePlugin from "@utils/types";
-import { ComponentDispatch, Forms } from "@webpack/common";
 
-import { resetTranslationQueues,safeTranslate } from "./api/translate";
+import { handleOutgoingTranslation, resetOutgoingTranslations } from "./api/outgoing";
+import { resetTranslationQueues } from "./api/translate";
 import { ApiKeysManager } from "./components/ApiKeyInput";
 import { ChannelManager } from "./components/ChannelManager";
 import { ClearCacheButton } from "./components/ClearCacheButton";
 import { ColorPickerInput } from "./components/ColorPickerInput";
-import { DictionaryManager } from "./components/DictionaryManager";
 import { GithubLinkInjector } from "./components/GithubLinkInjector";
 import { ManualBatchChatBarIcon, TranslateHeaderButton, TranslateIcon } from "./components/HeaderBarIcon";
 import { SettingsOverview } from "./components/SettingsOverview";
 import { SettingsPresets } from "./components/SettingsPresets";
 import { TranslationAccessory } from "./components/TranslationAccessory";
-import { CustomDictionaryStore } from "./dict";
-import { getChannelConfig, settings } from "./settings";
+import { settings } from "./settings";
 import { TranslationCache } from "./utils/cache";
 
 
 const SettingsHeader = ({ title }: { title: string }) => (
     <>
         <Divider style={{ marginTop: 24, marginBottom: 16 }} />
-        <Forms.FormTitle tag="h2">{title}</Forms.FormTitle>
+        <FormTitle tag="h2">{title}</FormTitle>
     </>
 );
 
@@ -38,8 +37,6 @@ const SettingsHeader = ({ title }: { title: string }) => (
 settings.def.ui_githubLink.component = GithubLinkInjector;
 settings.def.ui_overview.component = SettingsOverview;
 settings.def.header_translation.component = () => <SettingsHeader title="Translation" />;
-settings.def.header_dictionary.component = () => <SettingsHeader title="Dictionary" />;
-settings.def.dictionaryManager.component = DictionaryManager;
 settings.def.header_management.component = () => <SettingsHeader title="Channels & Outgoing Messages" />;
 settings.def.header_design.component = () => <SettingsHeader title="Appearance" />;
 settings.def.channelManager.component = ChannelManager;
@@ -52,7 +49,6 @@ settings.def.ui_presets.component = SettingsPresets;
 
 export let pluginStarted = false;
 
-let translatingActiveCount = 0;
 let lifecycleGeneration = 0;
 
 export default definePlugin({
@@ -67,7 +63,7 @@ export default definePlugin({
     async start() {
         const generation = ++lifecycleGeneration;
         resetTranslationQueues();
-        await Promise.all([CustomDictionaryStore.getInstance().init(), TranslationCache.getInstance().init()]);
+        await TranslationCache.getInstance().init();
         if (generation !== lifecycleGeneration) return;
         pluginStarted = true;
         addMessageAccessory("AlwaysTranslate", props => <TranslationAccessory message={props.message} />, 0);
@@ -80,9 +76,9 @@ export default definePlugin({
 
     stop() {
         lifecycleGeneration++;
+        resetOutgoingTranslations();
         pluginStarted = false;
         TranslationCache.getInstance().flush();
-        CustomDictionaryStore.getInstance().flush();
         resetTranslationQueues();
         removeMessageAccessory("AlwaysTranslate");
 
@@ -118,86 +114,9 @@ export default definePlugin({
 
     // 📤 Outgoing Message Translation 📤
 
-    async onBeforeMessageSend(channelId: string, message: any) {
+    async onBeforeMessageSend(channelId, message) {
         if (!pluginStarted) return;
-        if (!settings.store.translateOutgoing) return;
-        if (!message.content) return;
-
-        const { allowed, config } = getChannelConfig(channelId);
-        if (!allowed) return;
-
-        const { ignorePrefix } = settings.store;
-        if (ignorePrefix && message.content.startsWith(ignorePrefix)) {
-            message.content = message.content.slice(ignorePrefix.length);
-            return;
-        }
-
-        const { translationEngine = "gemini", deeplApiKey, geminiApiKey, deepseekApiKey } = settings.store;
-        let targetLang: string = settings.store.targetLang || "auto";
-
-        // Use per-channel language if configured
-        if (config?.lang && config.lang !== "auto") {
-            targetLang = config.lang;
-        }
-
-        if (targetLang === "auto") {
-            targetLang = document.documentElement.lang.split("-")[0] || "en";
-        }
-
-        // Logical Error Prevention:
-        // If the final target language for this outgoing message is the user's own client language,
-        // it means we are trying to translate from Native -> Native (e.g. Korean -> Korean).
-        // This happens if the channel's language is "auto" and we don't know the foreigner's language.
-        const clientLang = document.documentElement.lang.split("-")[0] || "en";
-        if (targetLang === clientLang) {
-            return;
-        }
-
-        let currentEngine = config?.engine ?? translationEngine;
-        if (currentEngine === "default") currentEngine = translationEngine;
-        const customPrompt = config?.outgoingCustomPrompt?.trim() || "";
-
-
-
-
-        translatingActiveCount++;
-        if (translatingActiveCount === 1) {
-            document.body.classList.add("bat-translating-active");
-        }
-
-        try {
-            const result = await safeTranslate(
-                message.content,
-                "auto",
-                targetLang,
-                currentEngine,
-                { deepl: deeplApiKey, gemini: geminiApiKey, deepseek: deepseekApiKey },
-                channelId,
-                undefined,
-                false,
-                customPrompt
-            );
-
-            if (result) {
-                TranslationCache.getInstance().setOutgoing(channelId, result, message.content);
-
-                if (settings.store.previewOutgoing) {
-                    message.content = "";
-                    message.invalid = true;
-                    // Use a slight delay to ensure Discord has cleared the chatbox after the Enter keypress
-                    setTimeout(() => {
-                        ComponentDispatch.dispatchToLastSubscribed("TEXTAREA_FOCUS");
-                        ComponentDispatch.dispatchToLastSubscribed("INSERT_TEXT", { rawText: result, plainText: result });
-                    }, 50);
-                } else {
-                    message.content = result;
-                }
-            }
-        } finally {
-            translatingActiveCount--;
-            if (translatingActiveCount === 0) {
-                document.body.classList.remove("bat-translating-active");
-            }
-        }
+        const generation = lifecycleGeneration;
+        return handleOutgoingTranslation(channelId, message, () => pluginStarted && generation === lifecycleGeneration);
     },
 });

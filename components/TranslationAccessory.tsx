@@ -55,7 +55,6 @@ export function TranslationAccessory({ message }: { message: Message }) {
         "geminiModel",
         "deepseekModel",
         "deepseekBaseUrl",
-        "dictionaryCaseSensitive",
         "hideMentions",
         "_cacheVersion"
     ]);

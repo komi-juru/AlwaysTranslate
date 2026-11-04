@@ -1,10 +1,11 @@
+import { Text as FormText } from "@components/Text";
 /*
  * Vencord, a Discord client mod
  * Copyright (c) 2026 Vendicated and contributors
  * SPDX-License-Identifier: GPL-3.0-or-later
  */
 
-import { Forms } from "@webpack/common";
+
 
 import { GLOBAL_ENGINE_OPTIONS, LANGUAGES } from "../constants";
 import { settings } from "../settings";
@@ -21,10 +22,10 @@ export function SettingsOverview() {
         .filter(e => engines.has(e.id) && !e.key.trim()).map(e => e.label);
     return (
         <section style={{ marginBottom: 16 }} aria-label="Translation overview">
-            <Forms.FormText>
+            <FormText>
                 Auto: {engineLabel(translationEngine)} · Manual: {engineLabel(manualTranslationEngine)} · {language}
-            </Forms.FormText>
-            {missing.length > 0 && <Forms.FormText>Missing API key: {missing.join(", ")}</Forms.FormText>}
+            </FormText>
+            {missing.length > 0 && <FormText>Missing API key: {missing.join(", ")}</FormText>}
         </section>
     );
 }

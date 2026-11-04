@@ -1,10 +1,13 @@
+import { Button } from "@components/Button";
+import { Heading as FormTitle } from "@components/Heading";
+import { Text as FormText } from "@components/Text";
 /*
  * Vencord, a Discord client mod
  * Copyright (c) 2026 Vendicated and contributors
  * SPDX-License-Identifier: GPL-3.0-or-later
  */
 
-import { Button, Forms, useState } from "@webpack/common";
+import { useState } from "@webpack/common";
 
 import { showTranslationToast } from "../utils/toast";
 import { settings } from "../settings";
@@ -15,12 +18,12 @@ export function ClearCacheButton() {
 
     return (
         <section style={{ marginBottom: "20px" }}>
-            <Forms.FormTitle>Clear Cache</Forms.FormTitle>
-            <Forms.FormText style={{ marginBottom: "8px" }}>
+            <FormTitle>Clear Cache</FormTitle>
+            <FormText style={{ marginBottom: "8px" }}>
                 Clears all saved translation data from memory and storage.
-            </Forms.FormText>
+            </FormText>
             <Button
-                color={Button.Colors.RED}
+                variant="dangerPrimary"
                 style={{ minWidth: "200px" }}
                 onClick={() => {
                     TranslationCache.getInstance().clearAll();

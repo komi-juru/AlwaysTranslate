@@ -9,6 +9,7 @@ import { settings } from "../settings";
 import { Logger } from "../utils/logger";
 import { globalProgressStore } from "../utils/progressStore";
 import { APIBreaker, setGeminiQuotaLock, showApiToast, showGeminiQuotaToast } from "./breaker";
+import { aiRequestLimiters } from "./requestLimiter";
 import { translateWithDeepL } from "./deepl";
 import { translateBatchWithDeepSeek } from "./deepseek";
 import { TRANSLATION_TIMEOUT_MS } from "./errors";
@@ -47,26 +48,9 @@ export interface TranslationTask {
     dmPrompt: string;
     status?: "QUEUED" | "PROCESSING";
     isManual?: boolean;
-    dictMatches?: Record<string, string>;
     model?: string;
     endpoint?: string;
 }
-
-export class Mutex {
-    private mutex = Promise.resolve();
-
-    acquire(): Promise<() => void> {
-        let release!: () => void;
-        const next = new Promise<void>(resolve => {
-            release = resolve;
-        });
-        const current = this.mutex;
-        this.mutex = this.mutex.then(() => next);
-        return current.then(() => release);
-    }
-}
-
-export const globalGeminiMutex = new Mutex();
 
 export type WorkerState = "IDLE" | "ACCUMULATING" | "PROCESSING";
 
@@ -265,32 +249,19 @@ export class GeminiChannelWorker {
 
             for (const chunk of chunks) {
 
-                const release = await globalGeminiMutex.acquire();
+                const controller = new AbortController();
+                this.abortController = controller;
+                const limiter = aiRequestLimiters[engine.startsWith("deepseek") ? "deepseek" : "gemini"];
+                const release = await limiter.acquire(controller.signal);
+                if (!release) return;
 
                 try {
                     if (generation !== this.generation) return;
                     if (!chunk.some(t => this.registry.get(t.id) === t)) continue;
-                    this.abortController = new AbortController();
-                    const timeoutId = setTimeout(() => this.abortController?.abort(), TRANSLATION_TIMEOUT_MS);
+                    const timeoutId = setTimeout(() => controller.abort(), TRANSLATION_TIMEOUT_MS);
 
                     try {
                         const messagesToTranslate = chunk.filter(t => this.registry.get(t.id) === t).map(t => ({ id: t.id, text: t.text }));
-
-                        let combinedDmPrompt = dmPrompt;
-                        const chunkGlossary: Record<string, string> = {};
-                        for (const t of chunk) {
-                            if (t.dictMatches) {
-                                Object.assign(chunkGlossary, t.dictMatches);
-                            }
-                        }
-                        const glossaryKeys = Object.keys(chunkGlossary);
-                        if (glossaryKeys.length > 0) {
-                            let glossaryStr = "\n\n# User Dictionary / Glossary\nCRITICAL: You MUST strictly use the exact translations provided below for the following specific terms. Do NOT translate them differently:\n";
-                            for (const k of glossaryKeys) {
-                                glossaryStr += `- "${k}": "${chunkGlossary[k]}"\n`;
-                            }
-                            combinedDmPrompt += glossaryStr;
-                        }
 
                         let fetchPromise;
                         if (engine.startsWith("deepseek")) {
@@ -299,7 +270,7 @@ export class GeminiChannelWorker {
                                 messagesToTranslate,
                                 targetLang,
                                 apiKey,
-                                combinedDmPrompt,
+                                dmPrompt,
                                 model,
                                 this.abortController.signal,
                                 endpoint
@@ -310,7 +281,7 @@ export class GeminiChannelWorker {
                                 messagesToTranslate,
                                 targetLang,
                                 apiKey,
-                                combinedDmPrompt,
+                                dmPrompt,
                                 model,
                                 this.abortController.signal
                             );
@@ -385,6 +356,7 @@ export class GeminiChannelWorker {
                         this.abortController = null;
                     }
                 } finally {
+                    if (this.abortController === controller) this.abortController = null;
                     release();
                 }
             }

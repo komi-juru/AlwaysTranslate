@@ -122,23 +122,3 @@ export async function batCacheSave(_: IpcMainInvokeEvent, data: string): Promise
         return false;
     }
 }
-
-export async function batDictLoad(_: IpcMainInvokeEvent): Promise<string | null> {
-    try {
-        const dictPath = path.join(app.getPath("userData"), "AlwaysTranslateDict.json");
-        return await fs.readFile(dictPath, "utf-8");
-    } catch {
-        return null;
-    }
-}
-
-export async function batDictSave(_: IpcMainInvokeEvent, data: string): Promise<boolean> {
-    try {
-        const dictPath = path.join(app.getPath("userData"), "AlwaysTranslateDict.json");
-        await fs.writeFile(dictPath, data, "utf-8");
-        return true;
-    } catch (e) {
-        console.error("[AlwaysTranslate] Failed to save dictionary file:", e);
-        return false;
-    }
-}

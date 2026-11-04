@@ -106,43 +106,6 @@
     font-size: 14px;
 }
 
-/* %%% Dictionary Scrollbar %%% */
-.bat-dict-scroller::-webkit-scrollbar {
-    width: 8px;
-    height: 8px;
-}
-.bat-dict-scroller::-webkit-scrollbar-track {
-    background-color: var(--scrollbar-thin-track, transparent);
-    border-radius: 4px;
-}
-.bat-dict-scroller::-webkit-scrollbar-thumb {
-    background-color: var(--scrollbar-thin-thumb, var(--background-tertiary, rgba(32, 34, 37, 0.6)));
-    border-radius: 4px;
-}
-.bat-dict-scroller::-webkit-scrollbar-thumb:hover {
-    background-color: var(--scrollbar-auto-thumb-hover, rgba(32, 34, 37, 0.8));
-}
-
-
-
-.bat-dict-scroller::-webkit-scrollbar {
-    width: 8px !important;
-    height: 8px !important;
-}
-.bat-dict-scroller::-webkit-scrollbar-track {
-    background-color: transparent !important;
-    border-radius: 4px !important;
-}
-.bat-dict-scroller::-webkit-scrollbar-thumb {
-    background-color: rgba(32, 34, 37, 0.6) !important;
-    border-radius: 4px !important;
-}
-.bat-dict-scroller::-webkit-scrollbar-thumb:hover {
-    background-color: rgba(32, 34, 37, 0.8) !important;
-}
-
-
-
 /* %%% Outgoing Translation Animation %%% */
 .bat-outgoing-overlay { color: var(--text-normal);
     position: fixed;

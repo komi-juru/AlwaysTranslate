@@ -1,10 +1,12 @@
+import { Button } from "@components/Button";
+import { Heading as FormTitle } from "@components/Heading";
 /*
  * Vencord, a Discord client mod
  * Copyright (c) 2026 Vendicated and contributors
  * SPDX-License-Identifier: GPL-3.0-or-later
  */
 
-import { Button, Forms, TextInput, useEffect, useState } from "@webpack/common";
+import { TextInput, useEffect, useState } from "@webpack/common";
 
 import { translateWithDeepL } from "../api/deepl";
 import { translateBatchWithGemini } from "../api/gemini";
@@ -37,7 +39,7 @@ function DeeplApiKeyInput({ setValue }: { setValue: (val: string) => void }) {
 
     return (
         <section style={{ marginBottom: "20px" }}>
-            <Forms.FormTitle>DeepL API Key</Forms.FormTitle>
+            <FormTitle>DeepL API Key</FormTitle>
         <div style={{ marginTop: "8px" }}>
             <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: "8px" }}>
                 <div style={{ flex: "1 1 180px", minWidth: 0 }}>
@@ -53,18 +55,16 @@ function DeeplApiKeyInput({ setValue }: { setValue: (val: string) => void }) {
                     />
                 </div>
                 <Button
-                    size={Button.Sizes.SMALL}
-                    color={Button.Colors?.PRIMARY ?? "primary"}
-                    look={Button.Looks?.FILLED ?? "filled"}
+                    size="small"
+                    variant="secondary"
                     onClick={() => setShow(!show)}
                     style={{ height: "40px", minWidth: "80px", padding: "0 16px" }}
                 >
                     {show ? "Hide" : "Show"}
                 </Button>
                 <Button
-                    size={Button.Sizes.SMALL}
-                    color={status === "success" ? Button.Colors?.GREEN ?? "green" : (status === "error" ? Button.Colors?.RED ?? "red" : Button.Colors?.BRAND ?? "brand")}
-                    look={Button.Looks?.FILLED ?? "filled"}
+                    size="small"
+                    variant={status === "success" ? "positive" : status === "error" ? "dangerPrimary" : "primary"}
                     onClick={handleValidate}
                     disabled={validating || !deeplApiKey}
                     style={{ height: "40px", minWidth: "80px", padding: "0 16px" }}
@@ -113,7 +113,7 @@ function GeminiApiKeyInput({ setValue }: { setValue: (val: string) => void }) {
 
     return (
         <section style={{ marginBottom: "20px" }}>
-            <Forms.FormTitle>Gemini API Key</Forms.FormTitle>
+            <FormTitle>Gemini API Key</FormTitle>
         <div style={{ marginTop: "8px" }}>
             <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: "8px" }}>
                 <div style={{ flex: "1 1 180px", minWidth: 0 }}>
@@ -129,18 +129,16 @@ function GeminiApiKeyInput({ setValue }: { setValue: (val: string) => void }) {
                     />
                 </div>
                 <Button
-                    size={Button.Sizes.SMALL}
-                    color={Button.Colors?.PRIMARY ?? "primary"}
-                    look={Button.Looks?.FILLED ?? "filled"}
+                    size="small"
+                    variant="secondary"
                     onClick={() => setShow(!show)}
                     style={{ height: "40px", minWidth: "80px", padding: "0 16px" }}
                 >
                     {show ? "Hide" : "Show"}
                 </Button>
                 <Button
-                    size={Button.Sizes.SMALL}
-                    color={status === "success" ? Button.Colors?.GREEN ?? "green" : (status === "error" ? Button.Colors?.RED ?? "red" : Button.Colors?.BRAND ?? "brand")}
-                    look={Button.Looks?.FILLED ?? "filled"}
+                    size="small"
+                    variant={status === "success" ? "positive" : status === "error" ? "dangerPrimary" : "primary"}
                     onClick={handleValidate}
                     disabled={validating || !geminiApiKey}
                     style={{ height: "40px", minWidth: "80px", padding: "0 16px" }}
@@ -211,7 +209,7 @@ function DeepSeekApiKeyInput({ setValue }: { setValue: (val: string) => void }) 
 
     return (
         <section style={{ marginBottom: "20px" }}>
-            <Forms.FormTitle>DeepSeek API Key</Forms.FormTitle>
+            <FormTitle>DeepSeek API Key</FormTitle>
         <div style={{ marginTop: "8px" }}>
             <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: "8px" }}>
                 <div style={{ flex: "1 1 180px", minWidth: 0 }}>
@@ -227,18 +225,16 @@ function DeepSeekApiKeyInput({ setValue }: { setValue: (val: string) => void }) 
                     />
                 </div>
                 <Button
-                    size={Button.Sizes.SMALL}
-                    color={Button.Colors?.PRIMARY ?? "primary"}
-                    look={Button.Looks?.FILLED ?? "filled"}
+                    size="small"
+                    variant="secondary"
                     onClick={() => setShow(!show)}
                     style={{ height: "40px", minWidth: "80px", padding: "0 16px" }}
                 >
                     {show ? "Hide" : "Show"}
                 </Button>
                 <Button
-                    size={Button.Sizes.SMALL}
-                    color={status === "success" ? Button.Colors?.GREEN ?? "green" : (status === "error" ? Button.Colors?.RED ?? "red" : Button.Colors?.BRAND ?? "brand")}
-                    look={Button.Looks?.FILLED ?? "filled"}
+                    size="small"
+                    variant={status === "success" ? "positive" : status === "error" ? "dangerPrimary" : "primary"}
                     onClick={handleValidate}
                     disabled={validating || !deepseekApiKey}
                     style={{ height: "40px", minWidth: "80px", padding: "0 16px" }}
@@ -286,7 +282,7 @@ export function ApiKeysManager() {
 
     return (
         <section className="bat-settings-section" aria-label="API keys">
-            <Button size={Button.Sizes.SMALL} color={Button.Colors.PRIMARY} look={Button.Looks.FILLED}
+            <Button size="small" variant="secondary"
                 aria-expanded={expanded} aria-controls="bat-api-keys"
                 onClick={() => setExpanded(value => !value)}>
                 {expanded ? "▾ API keys" : "▸ API keys"}
@@ -297,7 +293,7 @@ export function ApiKeysManager() {
                         <Input setValue={() => {}} />
                         {setModel && (
                             <div>
-                                <Forms.FormTitle>Model</Forms.FormTitle>
+                                <FormTitle>Model</FormTitle>
                                 <TextInput value={model} onChange={setModel} placeholder="Model ID" />
                             </div>
                         )}

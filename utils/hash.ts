@@ -4,7 +4,6 @@
  * SPDX-License-Identifier: GPL-3.0-or-later
  */
 
-import { CustomDictionaryStore } from "../dict";
 import { getChannelConfig, settings } from "../settings";
 
 export function getCacheKey(
@@ -23,8 +22,7 @@ export function getCacheKey(
     // Exact source text avoids hash collisions returning another message's translation.
     return getChannelCachePrefix(channelId) + JSON.stringify([
         engine, model, endpoint, sourceLang, targetLang, config?.aiCustomPrompt || "",
-        CustomDictionaryStore.getInstance().getCacheSignature(),
-        settings.store.dictionaryCaseSensitive, settings.store.hideEmojis,
+        settings.store.hideEmojis,
         settings.store.hideMentions, sourceText
     ]);
 }

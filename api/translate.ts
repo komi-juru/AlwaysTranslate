@@ -4,10 +4,8 @@
  * SPDX-License-Identifier: GPL-3.0-or-later
  */
 
-import { CustomDictionaryStore } from "../dict";
 import { getChannelConfig, settings } from "../settings";
 import { shouldTranslate } from "../utils/message";
-import { getDictRegex } from "../utils/string";
 import { getGeminiActiveQuotaLock, showGeminiQuotaToast } from "./breaker";
 import { DeeplChannelWorker, deeplWorkers, GeminiChannelWorker, geminiWorkers, reScheduleAllWorkers,resetAllWorkers } from "./worker";
 
@@ -29,7 +27,6 @@ export async function translate(
     engine: string,
     apiKeys: { deepl: string, gemini: string, deepseek: string },
     isManual = false,
-    dictMatches: Record<string, string> = {},
     customPrompt?: string
 ): Promise<string> {
     if (engine?.startsWith("gemini") || engine?.startsWith("deepseek")) {
@@ -55,7 +52,7 @@ export async function translate(
             const worker = geminiWorkers.get(channelId)!;
             const taskId = crypto.randomUUID();
             worker.enqueue({
-                id: taskId, messageId, channelId, text, resolve, targetLang, apiKey: engineKey, engine, dmPrompt, isManual, dictMatches,
+                id: taskId, messageId, channelId, text, resolve, targetLang, apiKey: engineKey, engine, dmPrompt, isManual,
                 model: isDeepSeek ? settings.store.deepseekModel : settings.store.geminiModel,
                 endpoint: isDeepSeek ? settings.store.deepseekBaseUrl : undefined
             });
@@ -178,40 +175,6 @@ function restoreTokens(text: string, tokens: string[]): string {
     });
 }
 
-// --- Dictionary Cache ---
-let cachedDictHash = "";
-let cachedDictRegex: RegExp | null = null;
-
-function applyCustomDictionary(text: string, caseSensitive: boolean): { replacedText: string, matches: Record<string, string> } {
-    const dict = CustomDictionaryStore.getInstance().getDict();
-    const dictKeys = Object.keys(dict);
-    const matches: Record<string, string> = {};
-
-    if (dictKeys.length === 0) return { replacedText: text, matches };
-
-    // Cache invalidation logic
-    const currentHash = JSON.stringify([dictKeys, caseSensitive]);
-    if (currentHash !== cachedDictHash) {
-        dictKeys.sort((a, b) => b.length - a.length);
-        cachedDictRegex = getDictRegex(dictKeys, caseSensitive);
-        cachedDictHash = currentHash;
-    }
-
-    if (cachedDictRegex) {
-        const replacedText = text.replace(cachedDictRegex, match => {
-            const matchedKey = dictKeys.find(k => caseSensitive ? k === match : k.toLowerCase() === match.toLowerCase());
-            if (matchedKey && dict[matchedKey]) {
-                matches[matchedKey] = dict[matchedKey];
-                return dict[matchedKey];
-            }
-            return match;
-        });
-        return { replacedText, matches };
-    }
-
-    return { replacedText: text, matches };
-}
-
 export async function safeTranslate(
     content: string,
     sourceLang: string,
@@ -226,17 +189,8 @@ export async function safeTranslate(
     if (!shouldTranslate(content, targetLang)) return null;
 
     // 1. Tokenize (Extract mentions, code blocks, emojis)
-    let { textToTranslate, tokens } = tokenizeText(content.trim(), settings.store.hideEmojis, settings.store.hideMentions);
+    const { textToTranslate, tokens } = tokenizeText(content.trim(), settings.store.hideEmojis, settings.store.hideMentions);
 
-    // 2. Custom Dictionary Substitution
-    const isAI = engine?.startsWith("gemini") || engine?.startsWith("deepseek");
-    const { replacedText, matches } = applyCustomDictionary(textToTranslate, settings.store.dictionaryCaseSensitive);
-
-    // For AI, we keep original text and pass dictionary rules to prompt.
-    // For DeepL, we inline replace the text.
-    textToTranslate = isAI ? textToTranslate : replacedText;
-
-    // 3. Translate
     const result = await translate(
         channelId || "",
         messageId || "",
@@ -246,12 +200,11 @@ export async function safeTranslate(
         engine,
         apiKeys,
         isManual,
-        matches,
         customPrompt
     );
 
     if (!result || result === textToTranslate) return null;
 
-    // 4. Restore tokens
+    // Restore tokens
     return restoreTokens(result, tokens);
 }

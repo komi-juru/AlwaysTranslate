@@ -68,10 +68,10 @@ export const settings = definePluginSettings({
     },
     manualTranslationEngine: {
         type: OptionType.SELECT,
-        default: "gemini",
+        default: "disable",
         displayName: "Manual button engine",
         description: "Engine for the Translate Now button.",
-        options: GLOBAL_ENGINE_OPTIONS.map(o => ({ ...o, label: o.value === "disable" ? "Off" : o.label, default: o.value === "gemini" })),
+        options: GLOBAL_ENGINE_OPTIONS.map(o => ({ ...o, label: o.value === "disable" ? "Off" : o.label, default: o.value === "disable" })),
     },
     deeplApiKey: {
         type: OptionType.CUSTOM,
@@ -89,7 +89,7 @@ export const settings = definePluginSettings({
     },
     geminiModel: {
         type: OptionType.CUSTOM,
-        default: "gemini-3.1-flash-lite",
+        default: "gemini-3.5-flash-lite",
     },
     deepseekApiKey: {
         type: OptionType.CUSTOM,
@@ -113,11 +113,11 @@ export const settings = definePluginSettings({
     },
     APIEcoModeThreshold: {
         type: OptionType.CUSTOM,
-        default: 3,
+        default: 1,
     },
     APIMaxBatchWait: {
         type: OptionType.CUSTOM,
-        default: 10,
+        default: 0,
     },
 
     header_management: {
@@ -141,7 +141,7 @@ export const settings = definePluginSettings({
     },
     previewOutgoing: {
         type: OptionType.BOOLEAN,
-        default: false,
+        default: true,
         displayName: "Preview before sending",
         description: "Show translated text in chatbox before sending.",
     },
@@ -157,25 +157,6 @@ export const settings = definePluginSettings({
         default: "!",
         displayName: "Skip translation prefix",
         description: "Skip messages starting with this.",
-    },
-
-    header_dictionary: {
-        type: OptionType.COMPONENT,
-        component: (): ReactNode => null,
-    },
-    customDictionary: {
-        type: OptionType.CUSTOM,
-        default: {} as Record<string, string>,
-    },
-    dictionaryCaseSensitive: {
-        type: OptionType.BOOLEAN,
-        default: false,
-        displayName: "Case-sensitive dictionary (English)",
-        description: "Match uppercase/lowercase exactly.",
-    },
-    dictionaryManager: {
-        type: OptionType.COMPONENT,
-        component: (): ReactNode => null,
     },
 
     header_design: {

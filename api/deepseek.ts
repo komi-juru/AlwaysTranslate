@@ -7,6 +7,7 @@
 import { PluginNative } from "@utils/types";
 
 import { settings } from "../settings";
+import { validateBatchTranslations } from "./batchResponse";
 import { httpError } from "./errors";
 import { buildDeepSeekSystemPrompt, buildDeepSeekUserPrompt } from "./geminiPrompt";
 import { nativeRequest } from "./nativeRequest";
@@ -89,20 +90,7 @@ export async function translateBatchWithDeepSeek(
 
         const parsed = JSON.parse(cleanJson);
 
-        // Handle array format: [{"id": "...", "text": "..."}]
-        if (Array.isArray(parsed)) {
-            const resultMap = new Map(parsed.map((r: any) => [r.id, r.text]));
-            return messages.map(m => ({
-                id: m.id,
-                text: resultMap.get(m.id) ?? ""
-            }));
-        }
-
-        // Handle object format: {"id": "translated text"}
-        return messages.map(m => ({
-            id: m.id,
-            text: parsed[m.id] ?? ""
-        }));
+        return validateBatchTranslations(parsed, messages, true);
     } catch (e: any) {
         console.error("DeepSeek Parse error:", resultText, e);
         throw new Error("Failed to parse DeepSeek JSON response: " + e.message);

@@ -60,7 +60,7 @@ export class TranslationCache {
             const data = await Native.batCacheLoad();
             if (!data) return;
             const parsed = JSON.parse(data);
-            // Older entries lack engine/model/dictionary metadata and cannot be reused safely.
+            // Older entries lack engine/model/prompt metadata and cannot be reused safely.
             if (parsed?.version !== 3 || !parsed.entries || typeof parsed.entries !== "object") return;
             for (const [key, value] of Object.entries(parsed.entries)) {
                 if (key.startsWith("v3:") && typeof value === "string") this.persistentCache.set(key, value);

@@ -9,6 +9,7 @@ import { PluginNative } from "@utils/types";
 import { GEMINI_TEMPERATURE } from "../constants";
 import { type GeminiQuotaKind, settings } from "../settings";
 import { Logger } from "../utils/logger";
+import { validateBatchTranslations } from "./batchResponse";
 import { httpError } from "./errors";
 import { buildBatchTranslationPrompt, buildBatchUserPromptContext } from "./geminiPrompt";
 import { nativeRequest } from "./nativeRequest";
@@ -204,8 +205,7 @@ export async function translateBatchWithGemini(
 
     try {
         const parsed = JSON.parse(jsonStr.trim());
-        if (!Array.isArray(parsed)) throw new Error("Output is not an array");
-        return parsed;
+        return validateBatchTranslations(parsed, messagesToTranslate);
     } catch (e: any) {
         Logger.error(
             "GeminiBatch",
