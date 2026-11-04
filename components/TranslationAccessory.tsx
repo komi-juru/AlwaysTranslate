@@ -69,8 +69,10 @@ export const TranslationAccessory = ErrorBoundary.wrap(function TranslationAcces
 
     const activeEngine = !config?.engine || config.engine === "default" ? translationEngine : config.engine;
 
-    const cacheKey = getCacheKey(message.channel_id, message.id, activeEngine, sourceLang, resolvedTarget, message.content);
-    let cachedTranslated = TranslationCache.getInstance().peek(cacheKey);
+    const cache = TranslationCache.getInstance();
+    const displayed = cache.getDisplayed(message.channel_id, message.id, message.content, resolvedTarget);
+    const cacheKey = displayed?.cacheKey ?? getCacheKey(message.channel_id, message.id, activeEngine, sourceLang, resolvedTarget, message.content);
+    let cachedTranslated = displayed?.text ?? cache.peek(cacheKey);
 
     // Outgoing cache fast-path: instantly display own sent translations
     if (!cachedTranslated && message.author?.id === UserStore.getCurrentUser()?.id) {
@@ -101,7 +103,7 @@ export const TranslationAccessory = ErrorBoundary.wrap(function TranslationAcces
     // Visibility Hook (DOM side-effects)
     useMessageVisibility({
         messageId: message.id,
-        allowed,
+        allowed: allowed && activeEngine !== "disable",
         hideOriginal,
         isTranslating,
         translatedText

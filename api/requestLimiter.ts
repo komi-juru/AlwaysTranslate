@@ -38,7 +38,9 @@ export function createRequestLimiter(maxConcurrent: number) {
     return { acquire };
 }
 
+export const AI_REQUEST_CONCURRENCY = 2;
+
 export const aiRequestLimiters = {
-    gemini: createRequestLimiter(2),
-    deepseek: createRequestLimiter(2)
+    gemini: createRequestLimiter(AI_REQUEST_CONCURRENCY),
+    deepseek: createRequestLimiter(AI_REQUEST_CONCURRENCY)
 };

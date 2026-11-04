@@ -8,9 +8,8 @@ import { PluginNative } from "@utils/types";
 
 import { settings } from "../settings";
 import { validateBatchTranslations } from "./batchResponse";
-import { httpError } from "./errors";
+import { requestDeepSeek } from "./deepseekRequest";
 import { buildDeepSeekSystemPrompt, buildDeepSeekUserPrompt } from "./geminiPrompt";
-import { nativeRequest } from "./nativeRequest";
 
 const Native = VencordNative.pluginHelpers.AlwaysTranslate as PluginNative<typeof import("../native")>;
 
@@ -57,14 +56,7 @@ export async function translateBatchWithDeepSeek(
         payload.thinking = { type: "disabled" }; // Explicitly disable thinking for DeepSeek V4 API
     }
 
-    let res;
-    try {
-        res = await nativeRequest(id => Native.batDeepSeekFetch(endpoint, apiKey, JSON.stringify(payload), id), signal);
-    } catch (e) {
-        throw e;
-    }
-
-    if (!res.ok) throw httpError(res.status, String(res.data));
+    const res = await requestDeepSeek(payload, apiKey, actualModelName, endpoint, signal);
 
     const resultText = (() => {
         try {

@@ -10,9 +10,10 @@ import { GEMINI_TEMPERATURE } from "../constants";
 import { type GeminiQuotaKind, settings } from "../settings";
 import { Logger } from "../utils/logger";
 import { validateBatchTranslations } from "./batchResponse";
-import { httpError } from "./errors";
+import { httpError, parseRetryAfter } from "./errors";
 import { buildBatchTranslationPrompt, buildBatchUserPromptContext } from "./geminiPrompt";
 import { nativeRequest } from "./nativeRequest";
+import { withRequestBackoff } from "./requestBackoff";
 
 const Native = VencordNative.pluginHelpers.AlwaysTranslate as PluginNative<typeof import("../native")>;
 
@@ -73,7 +74,13 @@ function classifyGeminiQuota(rawText: string, errData: any): GeminiQuotaKind | n
 
 
 // --- Helper: Unified API Fetch & Error Handling ---
-export async function fetchGeminiAPI(payload: any, engine: string, apiKey: string, signal?: AbortSignal): Promise<any> {
+export function fetchGeminiAPI(payload: any, engine: string, apiKey: string, signal?: AbortSignal): Promise<string> {
+    apiKey = apiKey.trim();
+    return withRequestBackoff({ engine: "gemini", apiKey, model: engine || settings.store.geminiModel, endpoint: getApiUrl(engine) },
+        () => fetchGeminiResponse(payload, engine, apiKey, signal));
+}
+
+async function fetchGeminiResponse(payload: any, engine: string, apiKey: string, signal?: AbortSignal): Promise<string> {
     if (!apiKey) throw new Error("Gemini API Key is missing.");
 
     const apiUrl = getApiUrl(engine);
@@ -121,10 +128,10 @@ export async function fetchGeminiAPI(payload: any, engine: string, apiKey: strin
 
             const err = new Error(quotaMessage) as Error & { quotaKind?: GeminiQuotaKind };
             err.quotaKind = quotaKind || "rpd";
-            throw err;
+            throw Object.assign(err, { status: res.status, retryAfterMs: parseRetryAfter(res.retryAfter) });
         }
 
-        throw httpError(res.status, String(res.data));
+        throw httpError(res.status, String(res.data), res.retryAfter);
     }
 
     try {

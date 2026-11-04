@@ -4,17 +4,14 @@
  * SPDX-License-Identifier: GPL-3.0-or-later
  */
 
-import { PluginNative } from "@utils/types";
 import { MessageStore, UserStore } from "@webpack/common";
 
 import { LANGUAGES } from "../constants";
 import { settings } from "../settings";
-import { httpError } from "./errors";
+import { requestDeepSeek } from "./deepseekRequest";
 import { fetchGeminiAPI } from "./gemini";
-import { nativeRequest } from "./nativeRequest";
 import { aiRequestLimiters } from "./requestLimiter";
 
-const Native = VencordNative.pluginHelpers.AlwaysTranslate as PluginNative<typeof import("../native")>;
 const detected = new Map<string, { key: string; language: string }>();
 const supported = LANGUAGES.filter(l => l.value !== "auto").map(l => l.value);
 
@@ -66,9 +63,8 @@ export async function detectOutgoingLanguage(channelId: string, engine: string, 
             if (!apiKey) throw new Error("DeepSeek API key missing");
             const model = settings.store.deepseekModel;
             const prompt = instruction + "\nChat text: " + JSON.stringify(sample.text);
-            const response = await nativeRequest(id => Native.batDeepSeekFetch(settings.store.deepseekBaseUrl, apiKey,
-                JSON.stringify({ model, messages: [{ role: "user", content: prompt }], stream: false, max_tokens: 100 }), id), signal);
-            if (!response.ok) throw httpError(response.status, String(response.data));
+            const response = await requestDeepSeek({ model, messages: [{ role: "user", content: prompt }], stream: false, max_tokens: 100 },
+                apiKey, model, settings.store.deepseekBaseUrl, signal);
             result = JSON.parse(response.data).choices?.[0]?.message?.content;
         } else {
             result = await fetchGeminiAPI({

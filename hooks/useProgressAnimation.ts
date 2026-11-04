@@ -4,12 +4,18 @@
  * SPDX-License-Identifier: GPL-3.0-or-later
  */
 
-import { useEffect, useRef, useState } from "@webpack/common";
+import { useEffect, useRef } from "@webpack/common";
 
 import { BATCH_ACCUMULATION_TIME_GEMINI } from "../constants";
 import { globalProgressStore } from "../utils/progressStore";
 
 interface UseProgressAnimationProps {
+    channelId: string;
+    paused: boolean;
+    threshold: number;
+    circleRef: React.RefObject<SVGCircleElement | null>;
+    svgRef: React.RefObject<SVGSVGElement | null>;
+    countRef: React.RefObject<HTMLSpanElement | null>;
     status: "waiting" | "fired";
     isLeader: boolean;
     isPaused: React.MutableRefObject<boolean>;
@@ -21,6 +27,12 @@ interface UseProgressAnimationProps {
 }
 
 export function useProgressAnimation({
+    channelId,
+    paused,
+    threshold,
+    circleRef,
+    svgRef,
+    countRef,
     status,
     isLeader,
     isPaused,
@@ -30,20 +42,31 @@ export function useProgressAnimation({
     targetStartTime,
     targetMaxWaitMs
 }: UseProgressAnimationProps) {
-    const progressStartVal = useRef<number>(globalProgressStore.get());
+    const progressStartVal = useRef<number>(globalProgressStore.get(channelId));
     const progressStartTime = useRef<number>(Date.now());
-    const currentProgressRef = useRef<number>(globalProgressStore.get());
+    const currentProgressRef = useRef<number>(globalProgressStore.get(channelId));
     const wasCountdown = useRef<boolean>(false);
 
-    const [renderTick, setRenderTick] = useState(0);
-
     useEffect(() => {
-        if (status === "fired" || !isLeader) return;
+        const draw = () => {
+            if (circleRef.current) circleRef.current.style.strokeDashoffset = (38 * (1 - currentProgressRef.current)).toFixed(3);
+            if (svgRef.current) svgRef.current.style.opacity = paused ? "0.5" : "1";
+            if (countRef.current) {
+                const hidden = threshold <= 1 || targetEcoProgress.current >= 1;
+                countRef.current.hidden = hidden;
+                if (!hidden) {
+                    const label = Math.round(targetEcoProgress.current * threshold) + "/" + threshold;
+                    if (countRef.current.textContent !== label) countRef.current.textContent = label;
+                }
+            }
+        };
+        draw();
+        if (status === "fired" || !isLeader || paused) return;
 
         let animationFrameId: number;
 
         const updateRing = () => {
-            if (hasFired.current) return;
+            if (hasFired.current || isPaused.current) return;
 
             if (!isPaused.current) {
                 const now = Date.now();
@@ -103,11 +126,10 @@ export function useProgressAnimation({
             }
 
             if (isLeader) {
-                globalProgressStore.set(currentProgressRef.current);
+                globalProgressStore.set(channelId, currentProgressRef.current);
             }
 
-            // Trigger a re-render so the UI component can read currentProgressRef and update the SVG style
-            setRenderTick(prev => prev + 1);
+            draw();
 
             animationFrameId = requestAnimationFrame(updateRing);
         };
@@ -117,7 +139,7 @@ export function useProgressAnimation({
         return () => {
             cancelAnimationFrame(animationFrameId);
         };
-    }, [status, isLeader, hasFired, isPaused, targetDeadline, targetEcoProgress]);
+    }, [channelId, paused, threshold, status, isLeader, hasFired, isPaused, targetDeadline, targetEcoProgress, targetStartTime, targetMaxWaitMs, circleRef, svgRef, countRef]);
 
     return {
         currentProgressRef

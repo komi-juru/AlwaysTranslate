@@ -9,8 +9,8 @@ import ErrorBoundary from "@components/ErrorBoundary";
 import { Heading as FormTitle } from "@components/Heading";
 import { TextInput, useEffect, useState } from "@webpack/common";
 
+import { requestDeepSeek } from "../api/deepseekRequest";
 import { translateBatchWithGemini } from "../api/gemini";
-import { nativeRequest } from "../api/nativeRequest";
 import { settings } from "../settings";
 
 function GeminiApiKeyInput({ setValue }: { setValue: (val: string) => void }) {
@@ -103,15 +103,14 @@ function DeepSeekApiKeyInput({ setValue }: { setValue: (val: string) => void }) 
         setValidating(true);
         setStatus("idle");
         try {
-            const Native = VencordNative.pluginHelpers.AlwaysTranslate as import("@utils/types").PluginNative<typeof import("../native")>;
             const endpoint = deepseekBaseUrl || "https://api.deepseek.com/chat/completions";
             const modelName = deepseekModel || "deepseek-v4-flash";
 
-            const res = await nativeRequest(id => Native.batDeepSeekFetch(endpoint, deepseekApiKey.trim(), JSON.stringify({
+            const res = await requestDeepSeek({
                 model: modelName,
                 messages: [{ role: "user", content: "hello" }],
                 stream: false
-            }), id));
+            }, deepseekApiKey.trim(), modelName, endpoint);
 
             if (!res.ok) {
                 let errorDetails = "Invalid API Key";

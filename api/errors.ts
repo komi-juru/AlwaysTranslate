@@ -26,7 +26,7 @@ export function describeApiError(status: number | null, code: string | null, mes
     return status ? `API request failed (HTTP ${status})` : "Translation failed";
 }
 
-export function httpError(status: number, raw: string) {
+export function httpError(status: number, raw: string, retryAfter?: string | null) {
     let code: string | null = null;
     let message = raw;
     try {
@@ -34,5 +34,13 @@ export function httpError(status: number, raw: string) {
         message = body.error?.message ?? body.message ?? raw;
         code = body.error?.details?.find((detail: { reason?: string }) => detail.reason)?.reason ?? body.error?.code ?? null;
     } catch {}
-    return Object.assign(new Error(describeApiError(status, code, message)), { status, code });
+    return Object.assign(new Error(describeApiError(status, code, message)), { status, code, retryAfterMs: parseRetryAfter(retryAfter) });
+}
+
+export function parseRetryAfter(value?: string | null): number {
+    if (!value?.trim()) return 0;
+    const seconds = Number(value);
+    if (Number.isFinite(seconds)) return Math.max(0, seconds * 1000);
+    const date = Date.parse(value);
+    return Number.isFinite(date) ? Math.max(0, date - Date.now()) : 0;
 }

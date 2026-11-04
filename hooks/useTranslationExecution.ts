@@ -56,12 +56,16 @@ export function useTranslationExecution({
 
     // Sync state when a cached translation becomes available
     useEffect(() => {
+        if (cachedTranslated && allowed && currentEngine !== "disable") {
+            const cache = TranslationCache.getInstance();
+            if (cache.get(cacheKey) === cachedTranslated) cache.rememberDisplayed(channelId, messageId, content, resolvedTarget, cacheKey);
+        }
         if (cachedTranslated && translatedText !== cachedTranslated) {
             setTranslatedText(cachedTranslated);
             setIsTranslating(false);
             setFailure(null);
         }
-    }, [cachedTranslated]);
+    }, [cachedTranslated, cacheKey, allowed, currentEngine, channelId, messageId, content, resolvedTarget]);
 
     useEffect(() => {
         setFailure(null);
@@ -106,7 +110,10 @@ export function useTranslationExecution({
                 const result = await promise;
                 if (cache.getGeneration(cacheKey) !== generation) return;
                 if (result) cache.set(cacheKey, result, currentEngine);
-                if (!cancelled) setTranslatedText(result);
+                if (!cancelled) {
+                    if (result) cache.rememberDisplayed(channelId, messageId, content, resolvedTarget, cacheKey);
+                    setTranslatedText(result);
+                }
             } catch (e) {
                 Logger.warn("Translate", "Translation request failed", e);
                 if (!cancelled && cache.getGeneration(cacheKey) === generation) setFailure({ key: requestKey, message: e instanceof Error ? e.message : "Translation failed" });

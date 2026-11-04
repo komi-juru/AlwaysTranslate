@@ -4,24 +4,13 @@
  * SPDX-License-Identifier: GPL-3.0-or-later
  */
 
-/**
- * Stores the visual progress (0 to 1) of the Gemini Eco Mode batching gauge.
- * Shared across the plugin to ensure smooth transitions when new leaders take over.
- */
-class ProgressStore {
-    private progress = 0;
+const progress = new Map<string, number>();
 
-    public get(): number {
-        return this.progress;
-    }
-
-    public set(value: number): void {
-        this.progress = Math.max(0, Math.min(1, value));
-    }
-
-    public reset(): void {
-        this.progress = 0;
-    }
-}
-
-export const globalProgressStore = new ProgressStore();
+export const globalProgressStore = {
+    get(channelId: string) { return progress.get(channelId) ?? 0; },
+    set(channelId: string, value: number) {
+        progress.set(channelId, Math.max(0, Math.min(1, value)));
+        if (progress.size > 100) progress.delete(progress.keys().next().value!);
+    },
+    reset(channelId: string) { progress.delete(channelId); }
+};

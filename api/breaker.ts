@@ -133,6 +133,7 @@ function writeGeminiQuotaState(apiKey: string, state: GeminiQuotaLockState) {
 }
 
 export function clearGeminiQuotaState(apiKey: string) {
+    if (!(apiKey in getGeminiQuotaLocks())) return;
     const locks = { ...getGeminiQuotaLocks() };
     delete locks[apiKey];
     settings.store.geminiQuotaLocks = locks;

@@ -22,6 +22,7 @@ export function useEcoModeEvents({ channelId, messageId }: UseEcoModeEventsProps
     const initialState = getAiBatchState(channelId, messageId);
 
     const isPaused = useRef(initialState ? (initialState.isPaused || initialState.isProcessing) : false);
+    const [paused, setPaused] = useState(isPaused.current);
     const initialDeadline = (initialState && initialState.deadline) ? initialState.deadline : Date.now() + 3000;
 
     const targetDeadline = useRef<number>(initialDeadline);
@@ -39,7 +40,7 @@ export function useEcoModeEvents({ channelId, messageId }: UseEcoModeEventsProps
         const state = getAiBatchState(channelId, messageId);
         if (state) {
             if (state.isProcessing || state.isFired) {
-                globalProgressStore.reset();
+                globalProgressStore.reset(channelId);
                 setStatus("fired");
                 return;
             }
@@ -72,7 +73,7 @@ export function useEcoModeEvents({ channelId, messageId }: UseEcoModeEventsProps
             if (!hasFired.current) {
                 if (e.detail?.taskIds && !e.detail.taskIds.includes(messageId)) return;
                 hasFired.current = true;
-                globalProgressStore.reset();
+                globalProgressStore.reset(channelId);
                 setStatus("fired");
             }
         };
@@ -80,6 +81,7 @@ export function useEcoModeEvents({ channelId, messageId }: UseEcoModeEventsProps
         const debouncedHandler = (e: CustomEvent<BatGeminiEventDetail>) => {
             if (!hasFired.current) {
                 isPaused.current = false;
+                setPaused(false);
                 if (e.detail) {
                     if (e.detail.leaderIds) {
                         setIsLeader(e.detail.leaderIds.includes(messageId));
@@ -103,6 +105,7 @@ export function useEcoModeEvents({ channelId, messageId }: UseEcoModeEventsProps
         const pausedHandler = (e: CustomEvent<BatGeminiEventDetail>) => {
             if (!hasFired.current) {
                 isPaused.current = true;
+                setPaused(true);
                 if (e.detail && e.detail.leaderIds) {
                     setIsLeader(e.detail.leaderIds.includes(messageId));
                 }
@@ -125,6 +128,7 @@ export function useEcoModeEvents({ channelId, messageId }: UseEcoModeEventsProps
         status,
         isLeader,
         isPaused,
+        paused,
         targetDeadline,
         targetEcoProgress,
         targetStartTime,

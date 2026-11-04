@@ -106,3 +106,5 @@ body.bat-translating-active * {
     color: var(--text-normal);
     text-decoration: underline;
 }
+
+.bat-loading-count { font-size: 10px; opacity: 0.6; margin-left: 4px; font-family: monospace; user-select: none; }

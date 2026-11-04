@@ -30,6 +30,7 @@ export const LoadingIndicator = ErrorBoundary.wrap(function LoadingIndicator({
 }: LoadingIndicatorProps) {
     const circleRef = useRef<SVGCircleElement>(null);
     const svgRef = useRef<SVGSVGElement>(null);
+    const countRef = useRef<HTMLSpanElement>(null);
 
     const { APIEcoModeThreshold } = settings.use(["APIEcoModeThreshold"]);
 
@@ -39,6 +40,7 @@ export const LoadingIndicator = ErrorBoundary.wrap(function LoadingIndicator({
         status,
         isLeader,
         isPaused,
+        paused,
         targetDeadline,
         targetEcoProgress,
         targetStartTime,
@@ -47,6 +49,7 @@ export const LoadingIndicator = ErrorBoundary.wrap(function LoadingIndicator({
 
     // 2. Hook to run the rAF loop and sync progress
     const { currentProgressRef } = useProgressAnimation({
+        channelId, paused, threshold: APIEcoModeThreshold ?? 1, circleRef, svgRef, countRef,
         status,
         isLeader,
         isPaused,
@@ -56,15 +59,6 @@ export const LoadingIndicator = ErrorBoundary.wrap(function LoadingIndicator({
         targetStartTime,
         targetMaxWaitMs
     });
-
-    // 3. Direct DOM manipulation for high-performance animation
-    // The useProgressAnimation hook triggers a re-render every frame to sync this.
-    if (circleRef.current && svgRef.current) {
-        const currentProgress = currentProgressRef.current;
-        const offset = 38 * (1 - currentProgress);
-        circleRef.current.style.strokeDashoffset = offset.toString();
-        svgRef.current.style.opacity = isPaused.current ? "0.5" : "1";
-    }
 
     return (
         <div className="bat-translation" style={{ color: displayColor, marginTop: topMargin }}>
@@ -97,17 +91,7 @@ export const LoadingIndicator = ErrorBoundary.wrap(function LoadingIndicator({
                                 }}
                             />
                         </svg>
-                        {(() => {
-                            const threshold = APIEcoModeThreshold ?? 1;
-                            if (threshold <= 1) return null;
-                            if (targetEcoProgress.current >= 1) return null;
-                            const count = Math.round(targetEcoProgress.current * threshold);
-                            return (
-                                <span style={{ fontSize: "10px", opacity: 0.6, marginLeft: "4px", fontFamily: "monospace", userSelect: "none" }}>
-                                    {count}/{threshold}
-                                </span>
-                            );
-                        })()}
+                        <span ref={countRef} hidden className="bat-loading-count" />
                     </>
                 )}
             </div>
