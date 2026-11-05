@@ -20,7 +20,7 @@ test("API errors distinguish credentials, permissions, balance, quota, service a
     assert.match(describeApiError(-1, null, "fetch failed"), /Network/);
     assert.match(describeApiError(null, null, "missing content"), /no translation/);
     assert.match(describeApiError(null, null, "Failed to parse JSON"), /Invalid API response/);
-    assert.match(describeApiError(null, null, "Translation timed out (20s)"), /timed out/);
+    assert.match(describeApiError(null, null, "Translation timed out (60s)"), /timed out/);
     const error = httpError(403, '{"error":{"message":"Forbidden"}}');
     assert.equal(error.status, 403); assert.match(error.message, /Access denied/);
 });
@@ -45,7 +45,9 @@ test("hung AI requests abort at the task deadline and ignore late completion", a
         const workers = e.load("api/worker.ts");
         const worker = new workers.AiChannelWorker("123");
         const job = task(engine); job.engine = engine; worker.enqueue(job); worker.flushNow(); await tick();
-        t.mock.timers.tick(20000); assert.equal(await job.result, ""); assert.ok(signal.aborted);
+        t.mock.timers.tick(20000); assert.equal(signal.aborted, false);
+        t.mock.timers.tick(39999); assert.equal(signal.aborted, false);
+        t.mock.timers.tick(1); assert.equal(await job.result, ""); assert.ok(signal.aborted);
         pending.resolve([{ id: engine, text: "late" }]);
         await tick(); assert.equal(worker.registry.size, 0); assert.equal(worker.state, "IDLE");
     }
@@ -59,7 +61,7 @@ test("native IPC hangs are bounded and cancellation is forwarded", async t => {
     let id;
     const promise = nativeRequest(requestId => { id = requestId; return new Promise(() => {}); });
     const rejection = assert.rejects(promise, /timed out/);
-    t.mock.timers.tick(20000); await rejection;
+    t.mock.timers.tick(60000); await rejection;
     assert.deepEqual(cancelled, [id]);
 });
 
@@ -510,7 +512,7 @@ test("stopping or timing out Auto detection cancels the send and the detection r
             signal = requestSignal; return new Promise((resolve, reject) => signal.addEventListener("abort", () => reject(Error("aborted")), { once: true }));
         };
         const sending = e.handleOutgoingTranslation("123", { content: "안녕하세요" }, () => active);
-        if (stop) { active = false; e.resetOutgoingTranslations(); } else t.mock.timers.tick(20000);
+        if (stop) { active = false; e.resetOutgoingTranslations(); } else t.mock.timers.tick(60000);
         assert.deepEqual(await sending, { cancel: true }); assert.equal(signal.aborted, true); assert.equal(e.calls, 0);
     }
 });
@@ -637,7 +639,7 @@ test("worker deadlines expose a timeout reason and release the request slot", as
     const { safeTranslate } = e.load("api/translate.ts");
     const translating = safeTranslate("hello", "auto", "ko", "gemini", { gemini: "key", deepseek: "" }, "123", "");
     const rejected = assert.rejects(translating, /timed out/); await tick();
-    t.mock.timers.tick(20000); await rejected; await tick(); assert.equal(signal.aborted, true);
+    t.mock.timers.tick(60000); await rejected; await tick(); assert.equal(signal.aborted, true);
     assert.equal(e.load("api/worker.ts").aiWorkers.size, 0);
 });
 
@@ -724,7 +726,7 @@ test("expired active requests abort even when newer work is queued", async t => 
     const { AiChannelWorker } = e.load("api/worker.ts"), worker = new AiChannelWorker("123");
     const old = task("old"); worker.enqueue(old);
     t.mock.timers.tick(10000); await tick(); assert.ok(firstSignal);
-    t.mock.timers.tick(5000); const next = task("next"); worker.enqueue(next);
+    t.mock.timers.tick(45000); const next = task("next"); worker.enqueue(next);
     t.mock.timers.tick(5000); assert.equal(await old.result, ""); await tick();
     assert.equal(firstSignal.aborted, true); assert.equal(worker.registry.has("next"), true);
     worker.flushNow(); assert.equal(await next.result, "new result"); await tick(); assert.equal(worker.registry.size, 0);
@@ -1147,7 +1149,7 @@ test("a chunk deadline cancels its siblings and releases all worker state", asyn
     const { translate } = e.load("api/translate.ts"), workers = e.load("api/worker.ts");
     const result = translate("123", "", "x".repeat(30000), "auto", "ko", "gemini", { gemini: "key", deepseek: "" });
     const failed = assert.rejects(result, /timed out/); await tick();
-    t.mock.timers.tick(20000); await failed; await tick();
+    t.mock.timers.tick(60000); await failed; await tick();
     assert.equal(signals.length, 2); assert.ok(signals.every(signal => signal.aborted)); assert.equal(workers.aiWorkers.size, 0);
 });
 
@@ -1391,7 +1393,7 @@ test("outgoing failures explain their cause while preserving the unsent message"
  for(const [error,expected] of [
  [Error('Invalid API response: missing translations'),'missing translations'],
  [Error('Invalid API key'),'Invalid API key'],
- [Error('Translation timed out (20s)'),'timed out'],
+ [Error('Translation timed out (60s)'),'timed out'],
  [Error('Network connection failed'),'Network'],
  [Error('Invalid translation: missing protected content'),'placeholder'],
  [Object.assign(Error('denied'),{status:403}),'Access denied']]){

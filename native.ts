@@ -8,6 +8,7 @@ import { app,IpcMainInvokeEvent } from "electron";
 import fs from "fs/promises";
 import path from "path";
 
+import { TRANSLATION_TIMEOUT_MS } from "./api/errors";
 import { CACHE_PERSISTENT_MAX_SIZE } from "./constants";
 import { CACHE_BYTE_BUDGET, CACHE_ENTRY_BYTE_LIMIT, CACHE_PATCH_ENTRY_LIMIT, cacheEntryBytes, type CachePatch } from "./utils/cachePolicy";
 
@@ -18,12 +19,12 @@ async function translationFetch(event: IpcMainInvokeEvent, requestId: string, ur
     const controller = new AbortController();
     requests.set(key, controller);
     let timedOut = false;
-    const timer = setTimeout(() => { timedOut = true; controller.abort(); }, Math.min(timeout, 20_000));
+    const timer = setTimeout(() => { timedOut = true; controller.abort(); }, Math.min(timeout, TRANSLATION_TIMEOUT_MS));
     try {
         const res = await fetch(url, { ...init, signal: controller.signal });
         return { ok: res.ok, status: res.status, data: await res.text(), retryAfter: res.headers?.get("retry-after") ?? null };
     } catch (e) {
-        return { ok: false, status: -1, data: timedOut ? "Translation timed out (20s)" : controller.signal.aborted ? "Translation cancelled" : "Network connection failed", retryAfter: null };
+        return { ok: false, status: -1, data: timedOut ? "Translation timed out (60s)" : controller.signal.aborted ? "Translation cancelled" : "Network connection failed", retryAfter: null };
     } finally {
         clearTimeout(timer);
         requests.delete(key);

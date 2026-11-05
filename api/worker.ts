@@ -20,9 +20,9 @@ function limitTask(task: TranslationTask, expire: () => void, fail: (error: Erro
     let settled = false;
     const timer = setTimeout(() => {
         if (settled) return;
-        task.reject!(new Error("Translation timed out (20s)"));
+        task.reject!(new Error("Translation timed out (60s)"));
         expire();
-        showApiToast(task.engine, "Translation timed out (20s)");
+        showApiToast(task.engine, "Translation timed out (60s)");
     }, TRANSLATION_TIMEOUT_MS);
     task.resolve = result => {
         if (settled) return;
@@ -193,8 +193,8 @@ export class AiChannelWorker {
             ecoProgress = 1;
         }
 
-        // Reserve half the deadline for the API even in indefinite economy mode.
-        const latestDispatch = this.firstMessageTime + TRANSLATION_TIMEOUT_MS / 2;
+        // Keep economy-mode accumulation bounded independently of the request deadline.
+        const latestDispatch = this.firstMessageTime + 10_000;
         if (deadline >= latestDispatch) {
             deadline = latestDispatch;
             nextAction = "process";
