@@ -151,15 +151,26 @@ export function useTranslationExecution({
         messageId
     ]);
 
+    useEffect(() => {
+        if (!failure || failure.key !== requestKey || translatedText) return;
+        const retryFailed = () => {
+            if (inFlight.current || !allowed || skipMessage || !shouldTranslateContent || currentEngine === "disable") return;
+            inFlight.current = true;
+            setFailure(null);
+            setRetryVersion(version => version + 1);
+        };
+        const event = "bat-retry-failed-" + channelId;
+        window.addEventListener(event, retryFailed);
+        return () => window.removeEventListener(event, retryFailed);
+    }, [failure, requestKey, translatedText, channelId, allowed, skipMessage, shouldTranslateContent, currentEngine]);
+
     return {
         translatedText,
         isTranslating,
         error: !translatedText && failure?.key === requestKey ? failure.message : null,
         retry: () => {
             if (inFlight.current || failure?.key !== requestKey || !allowed || skipMessage || !shouldTranslateContent || currentEngine === "disable") return;
-            inFlight.current = true;
-            setFailure(null);
-            setRetryVersion(version => version + 1);
+            window.dispatchEvent(new Event("bat-retry-failed-" + channelId));
         }
     };
 }

@@ -96,7 +96,7 @@ function environment(extra = {}) {
         new Function("require", "module", "exports", "window", "VencordNative", "document", code)(localRequire, module, module.exports, window, { pluginHelpers: { AlwaysTranslate: native } }, document);
         return module.exports;
     }
-    return { store, native, mocks, load };
+    return { store, native, mocks, load, window };
 }
 
 function task(id, text = id, messageId = "123456789012345678") {
@@ -1418,4 +1418,16 @@ test("channel manager expands groups and channel details", () => {
  nodes(tree).find(n=>n.type==='details'&&n.props.children[0].props.children[0]==='Test server').props.onToggle({currentTarget:{open:true}});tree=render();
  nodes(tree).find(n=>n.props?.id==='bat-channel-123456789012345678').props.onToggle({currentTarget:{open:true}});tree=render();
  assert.ok(nodes(tree).some(n=>n.props?.id==='bat-channel-123456789012345678'));assert.ok(nodes(tree).some(n=>n.props?.children==='Translation engine'));
+});
+
+
+test("channel retry events retry failures only and ignore other channels and successful messages", async () => {
+ const e=environment();let calls=0;
+ e.mocks['api/translate.ts']={safeTranslate:async()=>{if(++calls===1)throw Error('failed');return 'success';}};
+ const runner=translationHookRunner(e,translationHookProps());runner.render();await tick();runner.render();
+ e.window.dispatchEvent(new Event('bat-retry-failed-other'));runner.render();assert.equal(calls,1);
+ e.window.dispatchEvent(new Event('bat-retry-failed-123'));e.window.dispatchEvent(new Event('bat-retry-failed-123'));runner.render();await tick();
+ assert.equal(runner.render().translatedText,'success');assert.equal(calls,2);
+ e.window.dispatchEvent(new Event('bat-retry-failed-123'));runner.render();assert.equal(calls,2);
+ runner.unmount();await e.load('utils/cache.ts').TranslationCache.getInstance().flush();
 });

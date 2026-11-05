@@ -115,7 +115,7 @@ export const TranslationAccessory = ErrorBoundary.wrap(function TranslationAcces
     if (error && !isTranslating) {
         return (
             <button className="bat-translation-retry" type="button" title={error}
-                aria-label="번역 재시도" onClick={retry}>
+                aria-label="현재 채널의 실패한 번역 모두 재시도" onClick={retry}>
                 번역 실패 <span aria-hidden="true">↻</span>
             </button>
         );
