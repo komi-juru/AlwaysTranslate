@@ -74,7 +74,7 @@ function environment(extra = {}) {
         "api/breaker.ts": { APIBreaker: { reportError: () => false }, getGeminiActiveQuotaLock: () => null, showApiToast() {}, setGeminiQuotaLock() {}, showGeminiQuotaToast() {} },
         "api/gemini.ts": { translateBatchWithGemini: async (_, messages) => messages.map(m => ({ id: m.id, text: "translated:" + m.text })) },
         "api/deepseek.ts": { translateBatchWithDeepSeek: async (_, messages) => messages.map(m => ({ id: m.id, text: "translated:" + m.text })) },
-        "@webpack/common": { useRef: value => ({ current: value }) },
+        "@webpack/common": { useRef: value => ({ current: value }), useStateFromStores: (_, fn) => fn(), ApplicationStore: { getApplication: () => undefined } },
         "electron": { app: { getPath: () => "/unused" } }
     };
     const modules = new Map();
@@ -364,6 +364,7 @@ test("outgoing translation cancels on failure or stop; preview-off replaces text
 test("automatic rendering follows channel engines and scope and retains own outgoing originals", () => {
     const e = environment({ translationEngine: "deepseek", targetLang: "ko", skipOwnMessages: true,
         manualTranslationEngine: "gemini", channelList: [] });
+    let parserOptions;
     let execution, allowed = true, engine, failure = null, retries = 0;
     e.mocks["settings.ts"].settings.use = () => e.store;
     e.mocks["settings.ts"].getChannelConfig = () => ({ allowed, config: engine ? { engine } : null });
@@ -371,7 +372,7 @@ test("automatic rendering follows channel engines and scope and retains own outg
     e.mocks["@webpack"] = { findCssClassesLazy: () => ({ markup: "markup" }) };
     e.mocks["react/jsx-runtime"] = { jsx: (type, props) => ({ type, props }), jsxs: (type, props) => ({ type, props }) };
     e.mocks["@webpack/common"].UserStore = { getCurrentUser: () => ({ id: "me" }) };
-    e.mocks["@webpack/common"].Parser = { parse: text => text };
+    e.mocks["@webpack/common"].Parser = { parse: (text, inline, options) => { parserOptions = options; return text; } };
     e.mocks["index.ts"] = { pluginStarted: true };
     e.mocks["components/LoadingIndicator.ts"] = { LoadingIndicator() {} };
     e.mocks["hooks/useMessageVisibility.ts"] = { useMessageVisibility() {} };
@@ -386,6 +387,7 @@ test("automatic rendering follows channel engines and scope and retains own outg
     const { TranslationAccessory } = e.load("components/TranslationAccessory.tsx");
     const message = { id: "123456789012345678", channel_id: "123", content: "hello", author: { id: "other" } };
     assert.ok(TranslationAccessory({ message })); assert.equal(execution.currentEngine, "deepseek"); assert.equal(execution.cachedTranslated, undefined);
+    assert.equal(parserOptions.allowGameMentions, true); assert.equal(parserOptions.authorId, "other");
     engine = "gemini"; TranslationAccessory({ message }); assert.equal(execution.currentEngine, "gemini");
     engine = "default"; TranslationAccessory({ message }); assert.equal(execution.currentEngine, "deepseek");
     engine = "disable"; assert.equal(TranslationAccessory({ message }), null);
@@ -1430,4 +1432,34 @@ test("channel retry events retry failures only and ignore other channels and suc
  assert.equal(runner.render().translatedText,'success');assert.equal(calls,2);
  e.window.dispatchEvent(new Event('bat-retry-failed-123'));runner.render();assert.equal(calls,2);
  runner.unmount();await e.load('utils/cache.ts').TranslationCache.getInstance().flush();
+});
+
+
+test("quoted handles skip translation without skipping actual quoted prose", async () => {
+ const e=environment(),{shouldTranslate}=e.load('utils/message.ts');let requests=0;
+ e.mocks['api/gemini.ts'].translateBatchWithGemini=async(_,messages)=>{requests++;return messages.map(m=>({id:m.id,text:'translated'}));};
+ const {safeTranslate}=e.load('api/translate.ts');
+ for(const text of ['"@game"','  "@game"  ','“@game”','‘@game’',String.fromCharCode(39)+'@game'+String.fromCharCode(39)]){
+ assert.equal(shouldTranslate(text,'ko'),false);assert.equal(await safeTranslate(text,'auto','ko','gemini',{gemini:'key',deepseek:''},'123',''),null);
+ }
+ assert.equal(requests,0);
+ for(const text of ['"hello"','"@game" hello','hello "@game"','"@game hello"'])assert.equal(shouldTranslate(text,'ko'),true);
+});
+
+
+test("plain handles are skipped alone and preserved inside translated sentences", async () => {
+ const e=environment(),{shouldTranslate}=e.load('utils/message.ts');
+ for(const text of ['@game','"@game"','@game @friend','@게임','(@game)!'])assert.equal(shouldTranslate(text,'ko'),false);
+ const result=await e.load('api/translate.ts').safeTranslate('hello @game and @friend','auto','ko','gemini',{gemini:'key',deepseek:''},'123','');
+ assert.equal(result,'translated:hello @game and @friend');
+ assert.equal(shouldTranslate('hello @game','ko'),true);
+});
+
+
+test("game mentions retain raw identity for Discord native rendering", async () => {
+ const e=environment(),{safeTranslate}=e.load('api/translate.ts');
+ const source='<@$425438403819995145> hello';
+ assert.equal(await safeTranslate(source,'auto','ko','gemini',{gemini:'key',deepseek:''},'123',''),'translated:'+source);
+ assert.equal(e.load('utils/message.ts').shouldTranslate('"<@$425438403819995145>"','ko'),false);
+ await e.load('utils/cache.ts').TranslationCache.getInstance().flush();
 });

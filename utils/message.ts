@@ -6,6 +6,8 @@
 
 import { settings } from "../settings";
 
+export const PLAIN_MENTION_PATTERN = /(?<![\p{L}\p{N}_.@])@[\p{L}\p{N}_]+(?:[.-][\p{L}\p{N}_]+)*/gu;
+
 export function shouldTranslate(content: string, targetLang: string): boolean {
     const text = content.trim();
     if (!text) return false;
@@ -14,6 +16,7 @@ export function shouldTranslate(content: string, targetLang: string): boolean {
     if (ignorePrefix && text.startsWith(ignorePrefix)) return false;
 
     const detectionText = text
+        .replace(PLAIN_MENTION_PATTERN, "")
         .replace(/<a?:\w+:\d+>/g, "")
         .replace(/[\p{Emoji_Presentation}\p{Extended_Pictographic}]/gu, "")
         .replace(/(<@[!&]?\d+>|<#\d+>|https?:\/\/[^\s]+|```[\s\S]*?```|`[^`]+`)/g, "")

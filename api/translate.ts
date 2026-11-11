@@ -6,7 +6,7 @@
 
 import { getChannelConfig, settings } from "../settings";
 import { splitTranslationText } from "../utils/batching";
-import { shouldTranslate } from "../utils/message";
+import { PLAIN_MENTION_PATTERN, shouldTranslate } from "../utils/message";
 import { describeGeminiQuotaLock, getGeminiActiveQuotaLock, showGeminiQuotaToast } from "./breaker";
 import { AiChannelWorker, aiWorkers, reScheduleAllWorkers,resetAllWorkers } from "./worker";
 
@@ -98,7 +98,7 @@ async function translateChunk(
 
 
 // --- Tokenizer Helpers ---
-const PRESERVE_BASE = /\[\s*token\d+\s*\]|<@[!&]?\d+>|<#\d+>|<[^>]+>|https?:\/\/[^\s]+|```[\s\S]*?```|`[^`]+`/gimu;
+const PRESERVE_BASE = new RegExp(/\[\s*token\d+\s*\]|<@[!&]?\d+>|<#\d+>|<[^>]+>|https?:\/\/[^\s]+|```[\s\S]*?```|`[^`]+`/.source + "|" + PLAIN_MENTION_PATTERN.source, "gimu");
 
 export function getAiBatchState(channelId: string, messageId: string) {
     const worker = aiWorkers.get(channelId);

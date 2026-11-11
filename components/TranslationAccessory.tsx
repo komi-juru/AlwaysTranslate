@@ -157,7 +157,9 @@ export const TranslationAccessory = ErrorBoundary.wrap(function TranslationAcces
             {(!hideOriginal && showSeparator) && <div className="bat-separator" />}
             {Parser.parse(displayText, true, {
                 channelId: message.channel_id,
-                messageId: message.id
+                messageId: message.id,
+                authorId: message.author?.id,
+                allowGameMentions: true
             })}
         </div>
     );
